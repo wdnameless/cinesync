@@ -1,0 +1,14 @@
+# secrets / sessions
+.env
+
+# extracted data (contains your taste profile — never commit)
+data/
+!data/.gitkeep
+
+# playwright persistent browser profile (logged-in session)
+.pw-profile/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
