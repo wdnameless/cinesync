@@ -19,6 +19,7 @@ export const STORAGE_KEYS: Record<ServiceId, string> = {
   letterboxd: 'letterboxdAuth', // { userId }
   imdb: 'imdbAuth', // { userId }
   movielens: 'movielensAuth', // { userId }
+  kinopoisk: 'kinopoiskAuth', // { userId }
 };
 
 export function storageKeyFor(service: ServiceId): string {

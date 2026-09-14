@@ -1,4 +1,4 @@
-export type ServiceId = 'tmdb' | 'trakt' | 'simkl' | 'letterboxd' | 'imdb' | 'movielens';
+export type ServiceId = 'tmdb' | 'trakt' | 'simkl' | 'letterboxd' | 'imdb' | 'movielens' | 'kinopoisk';
 
 export type WriteMode = 'api' | 'csv';
 

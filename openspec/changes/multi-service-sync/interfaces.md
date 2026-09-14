@@ -192,6 +192,43 @@ export type MigrationStatus =
 Legacy `syncedCount` / `skippedCount` / `failedCount` MUST remain as the aggregate so existing UI wiring keeps rendering. Aggregate definition, stated once so no ambiguity survives: each aggregate is the **sum of the corresponding per-target counter across all targets**, recomputed after every per-target update. A target that failed mid-run contributes the counters it had reached; items never attempted are not counted as failed.
 
 
+## Zone F — Kinopoisk as a WRITE target (verified live)
+
+**Verification evidence** (Antidetect `test` profile, film page `/film/438268/`, via CDP `Network.enable`):
+clicking a rating label produced `POST https://graphql.kinopoisk.ru/graphql/?operationName=MovieSetVote`.
+So the DOM click path is real and does persist — this is measured, not assumed.
+
+### Verified DOM contract on a film page (`https://www.kinopoisk.ru/film/<id>/`)
+
+| Element | Selector | Notes |
+|---|---|---|
+| Rating form | `form.film-rate-form` | no `action`/`method`; React-controlled |
+| Rating radios | `form.film-rate-form input[name=star]` | exactly 10, `value` = `"1"`…`"10"` |
+| Rating labels | `form.film-rate-form label[data-value="N"]` | clicking the label or its input fires the save |
+| Current rating | `[class*=userRating]` | contains the literal text `Моя оценка` and the current value |
+| Change control | `[class*=kinopoiskRatingSnippet]` | button text `Изменить оценку` when a rating exists |
+| Remove control | `[class*=userRating] button` | text `Удалить` |
+| Watchlist toggle | a `button` whose text is `Буду смотреть` | presence/absence indicates watchlist state |
+
+Class names are hashed CSS-module suffixes that WILL change. Selectors MUST therefore anchor on the
+stable parts — the `film-rate-form` class, `input[name=star]`, `data-value`, and visible text — never on
+a full hashed class string.
+
+### Architecture constraint
+
+`kinopoisk` is a **browser-automation** target, not an HTTP target: it needs a live logged-in tab, so its
+adapter MUST work through `chrome.scripting.executeScript` against a Kinopoisk tab and MUST NOT attempt
+HTTP writes. Its `capabilities` are `{ canRate: true, canWatchlist: true, requiresAuth: true, writeMode: 'api' }`
+with an additional `automation: true` marker so the UI can warn that the account could be rate-limited.
+
+`ServiceId` gains `'kinopoisk'`. Because a page navigation per film is slow, the orchestrator MUST reuse a
+single Kinopoisk tab for the whole run and MUST space writes to avoid tripping bot protection.
+
+A `KINOPOISK_WRITE` message action is required, plus a `POST` of the same shape used by the other adapters:
+`{ action: 'START_SYNC'; targets: [...] }` where `targets` may now include `'kinopoisk'`.
+
+
+
 ## Zone E — DOM id contract (Agent-E owns both sides)
 
 New ids, one set per service tab (substitute `<svc>` ∈ tmdb|trakt|simkl|letterboxd|imdb|movielens):

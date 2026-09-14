@@ -6,18 +6,19 @@ import {
   RuntimeMessage,
   ServiceId,
   TargetProgress,
+  TargetStatus,
   TMDBAuth,
 } from './types';
 import { TMDBClient } from './tmdb';
 import { KPClient } from './kpClient';
-import { detectKinopoiskUserId, parseKinopoiskPage } from './scraper';
+import { KinopoiskPort } from './services/kinopoiskPort';
 import { MediaServicePort, ServiceRef } from './services/port';
 import { loadCredentials, saveCredentials, ServiceCredentials } from './services/credentials';
 import { createTmdbPort } from './services/tmdbPort';
 import { TraktPort } from './services/traktPort';
 import { SimklPort } from './services/simklPort';
 import { letterboxdPort, imdbPort, movieLensPort } from './services/csvPorts';
-
+import { detectKinopoiskUserId, parseKinopoiskPage } from './scraper';
 const DEFAULT_STATE: MigrationState = {
   status: 'idle',
   category: 'both',
@@ -117,9 +118,58 @@ function isAuthExpiredError(err: unknown): boolean {
   return false;
 }
 
+let cachedKinopoiskTabId: number | null = null;
+
+/**
+ * Finds an existing Kinopoisk tab or creates a new one and reuses it for the run.
+ */
+async function ensureKinopoiskTab(): Promise<number> {
+  if (cachedKinopoiskTabId !== null) {
+    try {
+      const tab = await chrome.tabs.get(cachedKinopoiskTabId);
+      if (tab?.id) return tab.id;
+    } catch {
+      cachedKinopoiskTabId = null;
+    }
+  }
+
+  const tabs = await chrome.tabs.query({ url: ['*://*.kinopoisk.ru/*'] });
+  if (tabs.length > 0 && tabs[0].id) {
+    cachedKinopoiskTabId = tabs[0].id;
+    return tabs[0].id;
+  }
+
+  const newTab = await chrome.tabs.create({
+    url: 'https://www.kinopoisk.ru/',
+    active: false,
+  });
+  if (!newTab.id) {
+    throw new Error('Не удалось создать вкладку Кинопоиска');
+  }
+  cachedKinopoiskTabId = newTab.id;
+
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, 15000);
+    function listener(updatedTabId: number, info: chrome.tabs.TabChangeInfo) {
+      if (updatedTabId === newTab.id && info.status === 'complete') {
+        clearTimeout(timeout);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+
+  return newTab.id;
+}
+
 async function getPortForService(
   serviceId: ServiceId,
-  customCreds?: ServiceCredentials
+  customCreds?: ServiceCredentials,
+  options?: { probeOnly?: boolean }
 ): Promise<MediaServicePort> {
   const creds = customCreds ?? (await loadCredentials(serviceId));
 
@@ -162,6 +212,16 @@ async function getPortForService(
           },
         }
       );
+    }
+    case 'kinopoisk': {
+      // Ping must never create or wait for a tab: it only reports whether a
+      // Kinopoisk tab is already open. Waiting here would stall the message
+      // channel for the full tab-load timeout.
+      if (options?.probeOnly) {
+        return new KinopoiskPort();
+      }
+      const tabId = await ensureKinopoiskTab();
+      return new KinopoiskPort({ tabId });
     }
     case 'letterboxd':
       return letterboxdPort;
@@ -273,7 +333,8 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
 
         case 'PING_SERVICE': {
           try {
-            const port = await getPortForService(message.service);
+            // Probe-only: never create a tab or wait on tab load for a ping.
+            const port = await getPortForService(message.service, undefined, { probeOnly: true });
             const valid = await port.ping();
             sendResponse({ success: true, valid });
           } catch (err: unknown) {
@@ -367,7 +428,15 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
           isPaused = false;
           isScanRunning = false;
           isSyncRunning = false;
-          await updateState({ status: 'idle', currentTitle: undefined });
+          // A target left mid-flight must not stay 'running' after the user
+          // stops: finalize it as 'skipped' so the UI does not show a stopped
+          // run as still in progress.
+          const stoppedTargets = (currentState.targets ?? []).map((t) =>
+            t.status === 'running' || t.status === 'pending'
+              ? { ...t, status: 'skipped' as TargetStatus }
+              : t
+          );
+          await updateState({ status: 'idle', currentTitle: undefined, targets: stoppedTargets });
           await logMessage('Все активные процессы остановлены пользователем', 'warn');
           sendResponse({ success: true });
           break;
@@ -447,7 +516,8 @@ async function collectKinopoiskItems(
         target: { tabId },
         func: detectKinopoiskUserId,
       });
-      userId = uidResults?.[0]?.result || null;
+      const rawUid = uidResults?.[0]?.result;
+      userId = typeof rawUid === 'string' ? rawUid : null;
     } catch {
       userId = null;
     }
@@ -611,7 +681,7 @@ async function runSync(
   }
 
   const enabledTargets = targets.filter(
-    (t) => t === 'tmdb' || t === 'trakt' || t === 'simkl'
+    (t) => t === 'tmdb' || t === 'trakt' || t === 'simkl' || t === 'kinopoisk'
   );
 
   if (enabledTargets.length === 0) {
@@ -658,6 +728,19 @@ async function runSync(
       failedCount: sumFailed,
     });
   };
+  /**
+   * Spacing delay for Kinopoisk DOM automation writes (3500ms base + 1500ms jitter).
+   * Kinopoisk employs bot detection and GraphQL rate limits (SmartCaptcha and Cloudflare/Yandex shields).
+   * Firing consecutive ratings or watchlist mutations too quickly triggers captcha verification
+   * or account restrictions. This spacing ensures operations look human and stay within limits.
+   */
+  const KINOPOISK_WRITE_DELAY_BASE_MS = 3500;
+  const KINOPOISK_WRITE_DELAY_JITTER_MS = 1500;
+
+  const getKinopoiskDelay = (): number => {
+    return KINOPOISK_WRITE_DELAY_BASE_MS + Math.floor(Math.random() * KINOPOISK_WRITE_DELAY_JITTER_MS);
+  };
+
 
   // Run per-target independently
   const runTarget = async (serviceId: ServiceId) => {
@@ -674,6 +757,40 @@ async function runSync(
       await aggregateProgress();
       return;
     }
+    if (serviceId === 'kinopoisk') {
+      try {
+        const tabId = await ensureKinopoiskTab();
+        const authResults = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            // Self-contained check for Kinopoisk logged-in status
+            const avatar = document.querySelector(
+              '[class*=avatar], [class*=user-dropdown], [class*=user_profile], a[href*="/user/"]'
+            );
+            const loginBtn = Array.from(document.querySelectorAll('button, a')).find(
+              (el) => el.textContent && el.textContent.trim().toLowerCase() === 'войти'
+            );
+            return { isLoggedIn: !loginBtn || !!avatar };
+          },
+        });
+        const auth = authResults[0]?.result;
+        if (auth && !auth.isLoggedIn) {
+          progress.status = 'failed';
+          progress.error = 'AUTH_EXPIRED';
+          await logMessage('[kinopoisk] Пользователь не авторизован на Кинопоиске (AUTH_EXPIRED)', 'error');
+          await aggregateProgress();
+          return;
+        }
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        progress.status = 'failed';
+        progress.error = errMsg;
+        await logMessage(`[kinopoisk] Вкладка Кинопоиска недоступна: ${errMsg}`, 'error');
+        await aggregateProgress();
+        return;
+      }
+    }
+
 
     let existingRatings = new Map<string, number>();
     let existingWatchlist = new Set<string>();
@@ -869,7 +986,8 @@ async function runSync(
         return;
       }
 
-      await sleep(delayMs);
+      const itemDelay = serviceId === 'kinopoisk' ? getKinopoiskDelay() : delayMs;
+      await sleep(itemDelay);
     }
 
     progress.status = 'completed';

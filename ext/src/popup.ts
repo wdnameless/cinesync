@@ -63,7 +63,7 @@ const langEn = document.getElementById('langEn');
 const tmdbPingBadge = document.getElementById('tmdbPingBadge');
 const tmdbPingText = document.getElementById('tmdbPingText');
 
-const ALL_SERVICES: ServiceId[] = ['tmdb', 'trakt', 'simkl', 'letterboxd', 'imdb', 'movielens'];
+const ALL_SERVICES: ServiceId[] = ['tmdb', 'trakt', 'simkl', 'letterboxd', 'imdb', 'movielens', 'kinopoisk'];
 const CSV_SERVICES: ServiceId[] = ['letterboxd', 'imdb', 'movielens'];
 
 /** Per-service DOM handles, resolved from the frozen Zone E id contract. */
@@ -105,6 +105,7 @@ const serviceElements: Record<ServiceId, ServiceElements> = {
   letterboxd: resolveServiceElements('letterboxd'),
   imdb: resolveServiceElements('imdb'),
   movielens: resolveServiceElements('movielens'),
+  kinopoisk: resolveServiceElements('kinopoisk'),
 };
 
 /** Services the user has enabled as sync targets. */
@@ -113,9 +114,9 @@ let enabledTargets: ServiceId[] = [];
 const translations: Record<Lang, Record<string, string>> = {
   ru: {
     tabTransfer: 'Перенос',
-    tabExport: 'Экспорт CSV',
+    tabExport: 'CSV',
     tabSettings: 'Ключи',
-    tabGuide: 'Инструкция',
+    tabGuide: 'Инфо',
     guideHeader: 'Пошаговое руководство',
     step1Title: 'Получите TMDB API Key',
     step1Desc: 'Зарегистрируйтесь на themoviedb.org, перейдите в Настройки ➔ API и создайте бесплатный ключ разработчика (Developer Key v3).',
@@ -199,6 +200,11 @@ const translations: Record<Lang, Record<string, string>> = {
     svcLetterboxd: 'Letterboxd',
     svcImdb: 'IMDb',
     svcMovielens: 'MovieLens',
+    svcKinopoisk: 'Кинопоиск',
+    kinopoiskTitle: 'Кинопоиск',
+    kinopoiskDesc: 'Запись оценок и списка «Буду смотреть» напрямую в ваш профиль Кинопоиска.',
+    kinopoiskAutomationNotice: 'У Кинопоиска нет публичного API на запись. Расширение работает через вашу открытую вкладку браузера: держите вкладку Кинопоиска открытой и не закрывайте её во время переноса.',
+    btnCheckTab: 'Проверить вкладку',
     // Shared service labels
     btnSave: 'Сохранить',
     btnConnect: 'Подключить',
@@ -251,13 +257,12 @@ const translations: Record<Lang, Record<string, string>> = {
     step7Link: 'Страница импорта Letterboxd ↗',
   },
   en: {
-    tabGuide: 'User Guide',
+    tabGuide: 'Guide',
+    tabTransfer: 'Sync',
+    tabExport: 'CSV',
+    tabSettings: 'Keys',
     guideHeader: 'Step-by-Step Guide',
     step1Title: 'Get TMDB API Key',
-    step1Desc: 'Register at themoviedb.org, navigate to Settings ➔ API, and generate your free Developer Key v3.',
-    step1Link: 'Open TMDB API ↗',
-    step2Title: 'Sign in via TMDB',
-    step2Desc: 'Paste the key in the «API Keys» tab, click «Sign In», approve access in the browser tab, then click «Confirm».',
     step3Title: 'Scan Kinopoisk Profile',
     step3Desc: 'Open your profile page on kinopoisk.ru and click «1. Scan KP». You can run other account scraping in parallel.',
     step4Title: 'Transfer to TMDB with No Duplicates',
@@ -334,6 +339,11 @@ const translations: Record<Lang, Record<string, string>> = {
     svcLetterboxd: 'Letterboxd',
     svcImdb: 'IMDb',
     svcMovielens: 'MovieLens',
+    svcKinopoisk: 'Kinopoisk',
+    kinopoiskTitle: 'Kinopoisk',
+    kinopoiskDesc: 'Write ratings and the watchlist directly into your Kinopoisk profile.',
+    kinopoiskAutomationNotice: 'Kinopoisk has no public write API. The extension works through your open browser tab: keep a Kinopoisk tab open and do not close it during the transfer.',
+    btnCheckTab: 'Check tab',
     // Shared service labels
     btnSave: 'Save',
     btnConnect: 'Connect',
@@ -890,14 +900,36 @@ function renderPing(service: ServiceId, state: PingState) {
   }
 }
 
+/**
+ * Marks an element busy for the duration of an async action so a slow request
+ * cannot be double-fired, then always clears it — including on error.
+ */
+function withBusy<T extends HTMLElement | null>(el: T, fn: () => void): void {
+  if (!el || el.classList.contains('is-busy')) return;
+  el.classList.add('is-busy');
+  const clear = () => el.classList.remove('is-busy');
+  try {
+    fn();
+  } catch (err) {
+    clear();
+    throw err;
+  }
+  // The message callback always runs; a timeout guarantees release if it never does.
+  window.setTimeout(clear, 15000);
+}
+
 function pingService(service: ServiceId) {
   renderPing(service, 'checking');
-  chrome.runtime.sendMessage({ action: 'PING_SERVICE', service }, (res: { success?: boolean; valid?: boolean; error?: string } | undefined) => {
-    if (res?.valid) {
-      renderPing(service, 'valid');
-    } else {
-      renderPing(service, 'invalid');
-    }
+  const badge = serviceElements[service]?.pingBadge;
+  withBusy(badge, () => {
+    chrome.runtime.sendMessage({ action: 'PING_SERVICE', service }, (res: { success?: boolean; valid?: boolean; error?: string } | undefined) => {
+      badge?.classList.remove('is-busy');
+      if (res?.valid) {
+        renderPing(service, 'valid');
+      } else {
+        renderPing(service, 'invalid');
+      }
+    });
   });
 }
 
@@ -924,21 +956,25 @@ function collectCredentials(service: ServiceId): ServiceCredentials {
 function saveServiceCredentials(service: ServiceId) {
   const credentials = collectCredentials(service);
   const dict = translations[currentLang];
+  const btn = serviceElements[service]?.saveBtn;
 
-  chrome.runtime.sendMessage(
-    { action: 'SAVE_SERVICE_CREDENTIALS', service, credentials },
-    (res: { success?: boolean; error?: string } | undefined) => {
-      if (res?.success) {
-        pingService(service);
-        // TMDB keeps its dedicated key path so the existing auth flow still works.
-        if (service === 'tmdb' && credentials.apiKey) {
-          chrome.runtime.sendMessage({ action: 'SAVE_API_KEY', apiKey: credentials.apiKey }, () => {});
+  withBusy(btn, () => {
+    chrome.runtime.sendMessage(
+      { action: 'SAVE_SERVICE_CREDENTIALS', service, credentials },
+      (res: { success?: boolean; error?: string } | undefined) => {
+        btn?.classList.remove('is-busy');
+        if (res?.success) {
+          pingService(service);
+          // TMDB keeps its dedicated key path so the existing auth flow still works.
+          if (service === 'tmdb' && credentials.apiKey) {
+            chrome.runtime.sendMessage({ action: 'SAVE_API_KEY', apiKey: credentials.apiKey }, () => {});
+          }
+        } else {
+          if (activeTitle) activeTitle.textContent = res?.error || dict.saveCredentialsError;
         }
-      } else {
-        if (activeTitle) activeTitle.textContent = res?.error || dict.saveCredentialsError;
       }
-    }
-  );
+    );
+  });
 }
 
 function downloadBundle(filename: string, content: string) {
@@ -956,18 +992,23 @@ function downloadBundle(filename: string, content: string) {
 
 function exportServiceCsv(service: ServiceId) {
   const dict = translations[currentLang];
-  chrome.runtime.sendMessage(
-    { action: 'EXPORT_SERVICE_CSV', service },
-    (res: { success?: boolean; files?: CsvBundle[]; error?: string } | undefined) => {
-      if (res?.success && res.files && res.files.length > 0) {
-        for (const file of res.files) {
-          downloadBundle(file.filename, file.content);
+  const btn = serviceElements[service]?.exportBtn;
+
+  withBusy(btn, () => {
+    chrome.runtime.sendMessage(
+      { action: 'EXPORT_SERVICE_CSV', service },
+      (res: { success?: boolean; files?: CsvBundle[]; error?: string } | undefined) => {
+        btn?.classList.remove('is-busy');
+        if (res?.success && res.files && res.files.length > 0) {
+          for (const file of res.files) {
+            downloadBundle(file.filename, file.content);
+          }
+        } else {
+          alert(res?.error || dict.noExportFiles);
         }
-      } else {
-        alert(res?.error || dict.noExportFiles);
       }
-    }
-  );
+    );
+  });
 }
 
 for (const service of ALL_SERVICES) {
