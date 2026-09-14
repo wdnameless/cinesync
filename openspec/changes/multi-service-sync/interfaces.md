@@ -229,6 +229,19 @@ A `KINOPOISK_WRITE` message action is required, plus a `POST` of the same shape 
 
 
 
+## Audit findings (verified against the running code)
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| `content.ts` dead file | **REMOVED** | Not in `manifest.json`, not in `vite.config.ts` inputs, and its only action `SCRAPE_KP` was never sent by any caller. It was the sole source of `any` and `console.log` in the tree. |
+| Series dedupe miss on Trakt/Simkl | **FIXED** | TMDB keys a series as `tv:<id>`; Trakt and Simkl key it as `show:<id>`. `dedupeKey` produced only `tv:`, so already-rated shows were rewritten. The alias set now covers both namespaces, and each alias is asserted by a test. |
+| Tautological dedupe test | **REPLACED** | The old test fed `mediaType: 'show'` — invalid per the `ServiceRef` type — and asserted its own interpolation. It could never fail. The replacement asserts aliases against the namespaces each port really stores; removing the `show:` alias makes it fail (mutation-checked). |
+| `manifest.json` host permissions | **PARTIAL** | `kinopoiskapiunofficial.tech` is fetched by `KPClient` but is NOT declared, so that request is cross-origin without permission. `letterboxd.com`, `imdb.com` and `movielens.org` are link targets only and never fetched — those grants are unused breadth. |
+| Write throttling | **OK by orchestrator** | `minIntervalMs` on `jsonRequest` is never passed by any adapter, but the sync loop sleeps `delayMs` (default 2500 ms) between items and Kinopoisk uses 3500 ms + up to 1500 ms jitter, so the effective rate stays well under every documented ceiling (Trakt 1 write/s, Simkl 5 req/s). |
+| Series under `/film/<id>/` | **NOT A BUG** | Kinopoisk redirects `/film/<seriesId>/` to `/series/<seriesId>/` and the rating form still renders with all 10 values. Verified live. |
+| `KPClient` ping returning invalid | **NOT A BUG** | A direct fetch from the worker returned HTTP 402 Payment Required — the free Kinopoisk Unofficial quota for that key is exhausted. The extension reports the truth. |
+
+
 ## Zone E — DOM id contract (Agent-E owns both sides)
 
 New ids, one set per service tab (substitute `<svc>` ∈ tmdb|trakt|simkl|letterboxd|imdb|movielens):

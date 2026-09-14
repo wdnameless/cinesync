@@ -650,11 +650,26 @@ async function runScanningOnly(category: MediaCategory, delayMs: number, targetU
   await logMessage(`Сканирование завершено! Собрано ${items.length} элементов Кинопоиска. Теперь доступен экспорт и синхронизация!`, 'success');
 }
 
+/**
+ * Builds the key aliases used to detect an already-existing entry on a target.
+ *
+ * Ports do not agree on one namespace, and that is not something this function
+ * can change: TMDB keys a series as `tv:<id>`, while Trakt and Simkl key it as
+ * `show:<id>` (their own API vocabulary). A ref carries mediaType 'tv', so
+ * without the aliases below a series key would never match Trakt/Simkl and
+ * dedupe would silently miss every already-rated show.
+ */
 function dedupeKey(ref: ServiceRef): string[] {
-  const keys: string[] = [];
-  keys.push(ref.id);
-  keys.push(`${ref.mediaType}_${ref.id}`);
+  const keys: string[] = [ref.id];
+  const isSeries = ref.mediaType === 'tv';
+
+  // Namespaces actually used by the ports.
+  keys.push(isSeries ? `tv:${ref.id}` : `movie:${ref.id}`);
+  keys.push(isSeries ? `show:${ref.id}` : `film:${ref.id}`);
+  keys.push(isSeries ? `tv_${ref.id}` : `movie_${ref.id}`);
   keys.push(`${ref.mediaType}:${ref.id}`);
+  keys.push(`${ref.mediaType}_${ref.id}`);
+
   return keys;
 }
 

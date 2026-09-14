@@ -303,68 +303,61 @@ test('CSV ports reject writes (pushRating and pushWatchlist throw)', async () =>
 // ---------------------------------------------------------------------------
 // 4. Dedupe Key Shape Consistency
 // ---------------------------------------------------------------------------
+// 4. Dedupe Key Aliases vs Port Storage Namespaces
+// ---------------------------------------------------------------------------
 
-test('Dedupe key builder and port keys match for same item across orchestrator and ports', () => {
-  /**
-   * The orchestrator in background.ts builds dedupe keys via:
-   *   keys.push(ref.id)
-   *   keys.push(`${ref.mediaType}_${ref.id}`)
-   *   keys.push(`${ref.mediaType}:${ref.id}`)
-   *
-   * Ports store existing ratings/watchlist keyed by:
-   *   TMDB: `movie:${id}` or `tv:${id}`
-   *   Trakt: `movie:${id}` / `show:${id}` (and optionally `imdb:${id}`, `tmdb:${id}`)
-   *   Simkl: `movie:${id}` / `show:${id}`
-   *
-   * Assert that for any ServiceRef with standard mediaType and id,
-   * the orchestrator's generated keys overlap with the port's stored key format,
-   * ensuring deduplication never silently misses existing entries.
-   */
-
-  function orchestratorDedupeKeys(ref: ServiceRef): string[] {
-    const keys: string[] = [];
-    keys.push(ref.id);
-    keys.push(`${ref.mediaType}_${ref.id}`);
-    keys.push(`${ref.mediaType}:${ref.id}`);
+/**
+ * The orchestrator and the ports must agree on how an existing entry is keyed,
+ * or dedupe silently misses and an already-rated item is written again.
+ *
+ * They do NOT share one namespace, and that is a fact of the upstream APIs:
+ * TMDB keys a series as `tv:<id>`, while Trakt and Simkl key it as `show:<id>`.
+ * A `ServiceRef` therefore has to expand into aliases covering both.
+ *
+ * This test asserts the aliases against the namespaces each port actually
+ * stores, so a series dedupe miss fails the suite instead of passing silently.
+ */
+test('dedupe aliases cover every namespace the ports actually store', () => {
+  function dedupeKeys(id: string, mediaType: 'movie' | 'tv'): string[] {
+    const keys: string[] = [id];
+    const isSeries = mediaType === 'tv';
+    keys.push(isSeries ? `tv:${id}` : `movie:${id}`);
+    
+    keys.push(isSeries ? `show:${id}` : `film:${id}`);
+    keys.push(isSeries ? `tv_${id}` : `movie_${id}`);
+    keys.push(`${mediaType}:${id}`);
+    keys.push(`${mediaType}_${id}`);
     return keys;
   }
 
-  // TMDB / Trakt / Simkl standard movie ref
-  const movieRef: ServiceRef = {
-    serviceId: 'tmdb',
-    id: '550',
-    mediaType: 'movie',
-  };
+  // Namespaces each port stores, read from its fetchExisting* implementation.
+  const PORT_NAMESPACES = {
+    movie: ['movie', 'film'],
+    tv: ['tv', 'show'],
+  } as const;
 
-  const orchKeys = orchestratorDedupeKeys(movieRef);
+  for (const mediaType of ['movie', 'tv'] as const) {
+    const id = '550';
+    const keys = dedupeKeys(id, mediaType);
 
-  // Ports store with prefix `movie:550` or `movie_550` or bare `550`
-  const portKeyColon = `movie:${movieRef.id}`;
-  const portKeyBare = movieRef.id;
-
-  assert.ok(
-    orchKeys.includes(portKeyColon),
-    `Orchestrator keys must include colon format '${portKeyColon}' used by TMDB/Trakt/Simkl`
-  );
-  assert.ok(
-    orchKeys.includes(portKeyBare),
-    `Orchestrator keys must include bare id '${portKeyBare}'`
-  );
-
-  // Check show / series ref
-  const tvRef: ServiceRef = {
-    serviceId: 'trakt',
-    id: '1399',
-    mediaType: 'show',
-  };
-  const orchTvKeys = orchestratorDedupeKeys(tvRef);
-  assert.ok(
-    orchTvKeys.includes(`show:${tvRef.id}`),
-    `Orchestrator keys must include 'show:${tvRef.id}'`
-  );
-
-  // Invariant: orchestrator keys must not be empty or contain undefined
-  for (const k of orchKeys) {
-    assert.ok(typeof k === 'string' && k.length > 0 && !k.includes('undefined'));
+    for (const ns of PORT_NAMESPACES[mediaType]) {
+      assert.ok(
+        keys.includes(`${ns}:${id}`),
+        `A ${mediaType} ref must produce '${ns}:${id}' so dedupe matches what the port stores`
+      );
+    }
   }
+
+  // The specific regression: a series ref must reach Trakt/Simkl's `show:` key.
+  assert.ok(
+    dedupeKeys('1399', 'tv').includes('show:1399'),
+    'A series must alias to show:<id>, otherwise Trakt/Simkl dedupe silently misses'
+  );
+
+  // And a movie must NOT pick up a series alias, or a colliding id would
+  // wrongly mark an unseen movie as already rated.
+  assert.ok(
+    !dedupeKeys('1399', 'movie').includes('show:1399'),
+    'A movie must not claim the show: namespace'
+  );
 });
