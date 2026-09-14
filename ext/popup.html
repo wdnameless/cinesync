@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kinopoisk ➔ TMDB Migrator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0c0e14;
+      --bg-surface: #131620;
+      --bg-card: rgba(21, 25, 37, 0.75);
+      --bg-subtle: rgba(255, 255, 255, 0.03);
+      --bg-glass: rgba(19, 22, 32, 0.85);
+
+      --border-base: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(255, 107, 0, 0.5);
+      --border-subtle: rgba(255, 255, 255, 0.04);
+
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+
+      --brand-kp: #ff6600;
+      --brand-kp-hover: #e55c00;
+      --brand-tmdb: #01b4e4;
+      --brand-tmdb-hover: #009ec8;
+
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --accent-amber: #f59e0b;
+
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-full: 9999px;
+
+      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      width: 100%;
+      min-width: 320px;
+      max-width: 440px;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-main);
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.4;
+      position: relative;
+      overflow-x: hidden;
+      margin: 0 auto;
+    }
+
+    @media (min-width: 390px) {
+      body {
+        width: 390px;
+      }
+    }
+
+    body::before {
+      content: '';
+      position: absolute;
+      top: -60px;
+      left: 10%;
+      width: 140px;
+      height: 140px;
+      background: radial-gradient(circle, rgba(255, 102, 0, 0.12) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: '';
+      position: absolute;
+      top: -40px;
+      right: 10%;
+      width: 140px;
+      height: 140px;
+      background: radial-gradient(circle, rgba(1, 180, 228, 0.12) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Header */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px 2px 4px;
+    }
+
+    .brand-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .brand-logo-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, rgba(255, 102, 0, 0.2), rgba(1, 180, 228, 0.2));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    .brand-title {
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .brand-title .arrow {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    /* Language Switcher */
+    .lang-switcher {
+      display: flex;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-full);
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .lang-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: var(--font-main);
+    }
+
+    .lang-btn.active {
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Premium Navigation Tabs */
+    .nav-tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-md);
+      padding: 3px;
+      gap: 4px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 10px;
+      border: none;
+      background: none;
+      color: var(--text-secondary);
+      font-family: var(--font-main);
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: calc(var(--radius-md) - 3px);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover:not(.active) {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .tab-btn.active {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+
+    .tab-content {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .tab-content.tab-hidden {
+      display: none;
+    }
+
+    /* Glass Cards */
+    .glass-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-lg);
+      padding: 13px 14px;
+      position: relative;
+      box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 11px;
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Form Fields */
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 9px;
+    }
+
+    .field-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .input-control {
+      flex: 1;
+      height: 34px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: var(--font-main);
+      font-size: 12px;
+      padding: 0 10px;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+
+    .input-control:focus {
+      border-color: var(--brand-tmdb);
+      box-shadow: 0 0 0 2px rgba(1, 180, 228, 0.15);
+    }
+
+    .select-control {
+      width: 100%;
+      height: 34px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: var(--font-main);
+      font-size: 12px;
+      padding: 0 10px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Auth status bar */
+    .auth-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 7px 10px;
+      margin-bottom: 9px;
+      gap: 8px;
+    }
+
+    .auth-status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .dot.active {
+      background: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
+
+    .dot.waiting {
+      background: var(--accent-amber);
+      box-shadow: 0 0 8px var(--accent-amber);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-secondary);
+    }
+
+    .status-badge.running {
+      background: rgba(1, 180, 228, 0.15);
+      color: var(--brand-tmdb);
+    }
+
+    .status-badge.completed {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent-emerald);
+    }
+
+    /* Ping badge */
+    .ping-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: var(--radius-full);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      margin-left: auto;
+    }
+    .ping-badge.valid {
+      color: var(--accent-emerald);
+      border-color: rgba(16, 185, 129, 0.3);
+      background: rgba(16, 185, 129, 0.08);
+    }
+    .ping-badge.invalid {
+      color: var(--accent-rose);
+      border-color: rgba(244, 63, 94, 0.3);
+      background: rgba(244, 63, 94, 0.08);
+    }
+
+    /* Guide Tab Styles */
+    .guide-step {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .guide-step:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+    .guide-step-num {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      border-radius: var(--radius-full);
+      background: rgba(255, 102, 0, 0.15);
+      border: 1px solid rgba(255, 102, 0, 0.3);
+      color: var(--brand-kp);
+      font-size: 11px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+    .guide-step-content {
+      flex: 1;
+    }
+    .guide-step-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .guide-step-desc {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+    .guide-link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--brand-tmdb);
+      text-decoration: none;
+      padding: 3px 8px;
+      background: rgba(1, 180, 228, 0.08);
+      border: 1px solid rgba(1, 180, 228, 0.25);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .guide-link-btn:hover {
+      background: rgba(1, 180, 228, 0.16);
+      border-color: rgba(1, 180, 228, 0.4);
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .metric-card {
+      background: rgba(0, 0, 0, 0.22);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 9px 6px;
+      text-align: center;
+    }
+
+    .metric-val {
+      font-size: 17px;
+      font-weight: 800;
+      font-family: var(--font-main);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+
+    .metric-val.success { color: var(--accent-emerald); }
+    .metric-val.danger { color: var(--accent-rose); }
+
+    .metric-lbl {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Progress Track */
+    .progress-section {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+
+    .progress-bar-wrap {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--brand-kp), var(--brand-tmdb));
+      border-radius: var(--radius-full);
+      transition: width 0.3s ease;
+    }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .current-title {
+      font-weight: 600;
+      color: #fff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 82%;
+    }
+
+    /* Action Buttons Row */
+    .main-actions-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      width: 100%;
+    }
+
+    /* Unified Button Styles */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-main);
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid transparent;
+      outline: none;
+      transition: all 0.15s ease;
+      min-width: 0;
+    }
+
+    .btn-primary {
+      flex: 1 1 0;
+      height: 36px;
+      background: linear-gradient(135deg, var(--brand-kp) 0%, #ff8033 100%);
+      color: #fff;
+      font-size: 11px;
+      padding: 0 6px;
+      gap: 5px;
+      box-shadow: 0 4px 14px rgba(255, 102, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      box-shadow: 0 6px 18px rgba(255, 102, 0, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      height: 34px;
+      padding: 0 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-base);
+      color: var(--text-primary);
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .btn-tmdb-action {
+      background: linear-gradient(135deg, #019ec8 0%, #01b4e4 100%);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(1, 180, 228, 0.25);
+    }
+
+    .btn-tmdb-action:hover:not(:disabled) {
+      box-shadow: 0 6px 18px rgba(1, 180, 228, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .btn-stop {
+      height: 36px;
+      padding: 0 10px;
+      background: rgba(239, 68, 68, 0.16) !important;
+      border: 1px solid rgba(239, 68, 68, 0.45) !important;
+      color: #fca5a5 !important;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      flex: 0 0 auto;
+      gap: 5px;
+    }
+
+    .btn-stop:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.28) !important;
+      border-color: rgba(239, 68, 68, 0.7) !important;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
+    }
+
+    .btn-icon-subtle {
+      width: 26px;
+      height: 26px;
+      border-radius: var(--radius-sm);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-icon-subtle:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-primary);
+      border-color: var(--border-subtle);
+    }
+
+    .btn:disabled, .btn-primary:disabled, .btn-secondary:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Export Tab Full Cards */
+    .export-card-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .export-item-card {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-md);
+      padding: 11px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      transition: all 0.15s ease;
+    }
+
+    .export-item-card:hover {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .export-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .export-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .export-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .btn-download {
+      height: 32px;
+      padding: 0 12px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 11px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .btn-download:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+
+    .btn-download-main {
+      background: linear-gradient(135deg, rgba(255, 102, 0, 0.2), rgba(1, 180, 228, 0.2));
+      border-color: rgba(255, 102, 0, 0.35);
+      color: #fff;
+    }
+
+    .btn-download-main:hover {
+      background: linear-gradient(135deg, rgba(255, 102, 0, 0.3), rgba(1, 180, 228, 0.3));
+      border-color: rgba(255, 102, 0, 0.6);
+    }
+
+    /* Console Logs */
+    .console-box {
+      background: #08090d;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      line-height: 1.45;
+      height: 95px;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+    }
+
+    .log-entry {
+      margin-bottom: 3px;
+      word-break: break-word;
+    }
+
+    .log-time {
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+
+    .log-info { color: #94a3b8; }
+    .log-success { color: #34d399; font-weight: 500; }
+    .log-error { color: #f87171; }
+    .log-warn { color: #fbbf24; }
+
+    .collapsed {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-title-wrap">
+        <div class="brand-logo-badge" style="display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(56, 189, 248, 0.15)); border: 1px solid rgba(255, 255, 255, 0.08);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3" fill="rgba(249, 115, 22, 0.6)" stroke="#f97316"></polygon>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <span data-i18n="titleKp">Kinopoisk</span>
+          <span class="arrow">➔</span>
+          <span style="color: var(--brand-tmdb);">TMDB</span>
+        </div>
+      </div>
+      <div class="lang-switcher">
+        <button class="lang-btn active" id="langRu" title="Русский">RU</button>
+        <button class="lang-btn" id="langEn" title="English">EN</button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+      <button class="tab-btn active" id="tabMigrationBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+        <span data-i18n="tabTransfer">Перенос</span>
+      </button>
+      <button class="tab-btn" id="tabExportBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <span data-i18n="tabExport">Экспорт CSV</span>
+      </button>
+      <button class="tab-btn" id="tabSettingsBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0-2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <span data-i18n="tabSettings">Ключи</span>
+      </button>
+      <button class="tab-btn" id="tabGuideBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <span data-i18n="tabGuide">Инструкция</span>
+      </button>
+    </div>
+
+    <!-- TAB 1: MIGRATION & PROCESS CONTROL -->
+    <div class="tab-content" id="tabMigration">
+      <div class="glass-card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            <span data-i18n="processTitle">Управление процессом</span>
+          </span>
+          <span class="status-badge" id="statusBadge">IDLE</span>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="categorySelect">
+            <span data-i18n="categoryLabel">Данные для синхронизации</span>
+          </label>
+          <select id="categorySelect" class="select-control">
+            <option value="both" data-i18n="optBoth">Оценки + Буду смотреть (Watchlist)</option>
+            <option value="ratings" data-i18n="optRatings">Только оценки</option>
+            <option value="watchlist" data-i18n="optWatchlist">Только 'Буду смотреть'</option>
+          </select>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-val" id="scrapedVal">0</div>
+            <div class="metric-lbl" data-i18n="lblScraped">Собрано</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val success" id="syncedVal">0</div>
+            <div class="metric-lbl" data-i18n="lblSynced">В TMDB</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val danger" id="failedVal">0</div>
+            <div class="metric-lbl" data-i18n="lblFailed">Ошибки</div>
+          </div>
+        </div>
+
+        <div class="progress-section">
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="progressBar"></div>
+          </div>
+          <div class="progress-info">
+            <span class="current-title" id="progressTitle" data-i18n="readyTitle">Готов к запуску</span>
+            <span id="progressPercent">0%</span>
+          </div>
+        </div>
+
+        <div class="main-actions-row">
+          <button class="btn btn-primary" id="scanBtn" title="Собрать оценки и список с Кинопоиска в память">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span data-i18n="btnScan">1. Сканировать КП</span>
+          </button>
+          <button class="btn btn-primary btn-tmdb-action" id="startBtn" title="Синхронизировать собранные фильмы с аккаунтом TMDB">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span data-i18n="btnTransfer">2. В TMDB</span>
+          </button>
+          <button class="btn btn-stop" id="stopBtn" style="display: none;" title="Остановить процесс">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
+            <span data-i18n="btnStop">Стоп</span>
+          </button>
+          <button class="btn btn-secondary" id="pauseBtn" style="display: none; background: rgba(245, 158, 11, 0.15); color: #fbbf24;">
+            <span data-i18n="btnResume">Продолжить</span>
+          </button>
+          <button class="btn btn-secondary" id="resetBtn" title="Сбросить прогресс" style="width: 36px; height: 36px; padding: 0; flex: 0 0 36px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Console Logs -->
+      <div class="glass-card" style="padding-bottom: 10px;">
+        <div class="card-header" style="margin-bottom: 7px;">
+          <span class="card-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+            <span data-i18n="logsTitle">Логи событий</span>
+          </span>
+          <button class="btn-icon-subtle" id="clearLogsBtn" title="Очистить логи">✕</button>
+        </div>
+        <div class="console-box" id="logsBox">
+          <div class="log-entry log-info"><span class="log-time">[Init]</span> Готово к работе</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: EXPORT TO CSV TABLES -->
+    <div class="tab-content tab-hidden" id="tabExport">
+      <div class="glass-card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            <span data-i18n="exportSectionTitle">Экспорт таблиц Кинопоиска</span>
+          </span>
+        </div>
+
+        <div class="export-card-row">
+          <div class="export-item-card">
+            <div class="export-info">
+              <span class="export-title">⭐ <span data-i18n="exportRatedTitle">Оценки пользователей</span></span>
+              <span class="export-desc" data-i18n="exportRatedDesc">ID, Название, Год, Ваша оценка, Ссылка на КП</span>
+            </div>
+            <button class="btn-download" id="exportRatedBtn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>CSV</span>
+            </button>
+          </div>
+
+          <div class="export-item-card">
+            <div class="export-info">
+              <span class="export-title">📑 <span data-i18n="exportWlTitle">Буду смотреть (Watchlist)</span></span>
+              <span class="export-desc" data-i18n="exportWlDesc">ID, Название, Год выпуска, Ссылка на КП</span>
+            </div>
+            <button class="btn-download" id="exportWatchlistBtn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>CSV</span>
+            </button>
+          </div>
+
+          <div class="export-item-card" style="border-color: rgba(255, 102, 0, 0.25);">
+            <div class="export-info">
+              <span class="export-title" style="color: #ff944d;">💾 <span data-i18n="exportFullTitle">Полный архив базы</span></span>
+              <span class="export-desc" data-i18n="exportFullDesc">Все фильмы, оценки, списки, категории и ссылки</span>
+            </div>
+            <button class="btn-download btn-download-main" id="exportCsvBtn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span data-i18n="btnDownloadFull">Скачать всё</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: SETTINGS & API KEYS -->
+    <div class="tab-content tab-hidden" id="tabSettings">
+      <div class="glass-card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            <span data-i18n="authTitle">Авторизация и ключи API</span>
+          </span>
+          <button class="btn btn-secondary" id="btnOpenGuideFromKeys" style="height: 24px; padding: 0 8px; font-size: 10px; gap: 4px;" data-i18n="btnHowToConnect">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span>Как подключить?</span>
+          </button>
+        </div>
+
+        <!-- TMDB Key -->
+        <div class="field-group">
+          <label class="field-label" for="apiKey">
+            <span data-i18n="tmdbKeyLabel">TMDB v3 API Key</span>
+            <span class="ping-badge" id="tmdbPingBadge" style="display: none;">● <span id="tmdbPingText">OK</span></span>
+            <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color: var(--brand-tmdb); text-decoration: none; font-size: 10px;" data-i18n="getKeyLink">Получить ↗</a>
+          </label>
+          <div class="input-row">
+            <input type="password" id="apiKey" class="input-control" placeholder="TMDB v3 API Key" autocomplete="off" />
+            <button class="btn btn-secondary" id="saveKeyBtn" style="min-width: 48px;" data-i18n="btnOk">ОК</button>
+          </div>
+        </div>
+
+        <!-- TMDB Session status -->
+        <div class="auth-status-bar">
+          <div class="auth-status-indicator">
+            <span class="dot" id="sessionDot"></span>
+            <span><span data-i18n="statusPrefix">Статус:</span> <strong id="sessionStatusText" style="color: #fff;">Не авторизован</strong></span>
+          </div>
+          <div style="display: flex; gap: 4px; align-items: center;">
+            <button class="btn btn-secondary" id="tmdbLoginBtn" style="height: 28px; padding: 0 10px; font-size: 11px;" data-i18n="btnLogin">Войти</button>
+            <button class="btn btn-primary" id="tmdbConfirmBtn" style="height: 28px; padding: 0 10px; font-size: 11px; display: none;" data-i18n="btnConfirm">Подтвердить</button>
+          </div>
+        </div>
+
+        <!-- Kinopoisk Unofficial API Key -->
+        <div class="field-group" style="margin-bottom: 0;">
+          <label class="field-label" for="kpApiKey">
+            <span data-i18n="kpKeyLabel">Kinopoisk Unofficial API Key</span>
+            <span class="ping-badge" id="kpPingBadge" style="display: none;">● <span id="kpPingText">OK</span></span>
+            <a href="https://kinopoiskapiunofficial.tech/" target="_blank" style="color: var(--brand-kp); text-decoration: none; font-size: 10px; margin-left: auto;" data-i18n="getKeyLink">Получить ↗</a>
+          </label>
+          <div class="input-row">
+            <input type="password" id="kpApiKey" class="input-control" placeholder="API Key для IMDb ID / обхода капчи" autocomplete="off" />
+            <button class="btn btn-secondary" id="saveKpKeyBtn" style="min-width: 48px;" data-i18n="btnOk">ОК</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: INTERACTIVE USER GUIDE & FAQ -->
+    <div class="tab-content tab-hidden" id="tabGuide">
+      <div class="glass-card" style="padding-bottom: 14px;">
+        <div class="card-header">
+          <span class="card-title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span data-i18n="guideHeader">Пошаговое руководство</span>
+          </span>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">1</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">
+              <span data-i18n="step1Title">Получите TMDB API Key</span>
+            </div>
+            <div class="guide-step-desc" data-i18n="step1Desc">
+              Зарегистрируйтесь на themoviedb.org, перейдите в Настройки ➔ API и создайте бесплатный ключ разработчика (Developer Key v3).
+            </div>
+            <a href="https://www.themoviedb.org/settings/api" target="_blank" class="guide-link-btn" data-i18n="step1Link">
+              Открыть TMDB API ↗
+            </a>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">2</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">
+              <span data-i18n="step2Title">Авторизуйтесь через TMDB</span>
+            </div>
+            <div class="guide-step-desc" data-i18n="step2Desc">
+              Вставьте ключ во вкладке «Ключи», нажмите «Войти», разрешите доступ во всплывающем окне и нажмите «Подтвердить».
+            </div>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">3</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">
+              <span data-i18n="step3Title">Сканируйте свой Кинопоиск</span>
+            </div>
+            <div class="guide-step-desc" data-i18n="step3Desc">
+              Откройте вкладку со своим профилем на kinopoisk.ru и нажмите «1. Сканировать КП». Можно переключаться на другие аккаунты параллельно.
+            </div>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">4</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">
+              <span data-i18n="step4Title">Переносите в TMDB без дублей</span>
+            </div>
+            <div class="guide-step-desc" data-i18n="step4Desc">
+              Нажмите «2. В TMDB». Расширение автоматически проверит ваш аккаунт и пропустит фильмы, где уже стоят оценки!
+            </div>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">5</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">
+              <span data-i18n="step5Title">Экспорт таблиц CSV</span>
+            </div>
+            <div class="guide-step-desc" data-i18n="step5Desc">
+              Во вкладке «Экспорт CSV» скачивайте готовые таблицы с ID, названиями, годами, оценками и прямыми ссылками на КП.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/popup.ts"></script>
+</body>
+</html>
