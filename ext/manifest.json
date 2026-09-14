@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Kinopoisk to TMDB Migrator",
+  "name": "Kinopoisk Sync — TMDB, Trakt, Simkl & CSV",
   "version": "3.0.0",
-  "description": "Автоматический перенос оценок и списка 'Буду смотреть' из Кинопоиска в TMDB",
+  "description": "Перенос оценок и списка «Буду смотреть» с Кинопоиска в TMDB, Trakt, Simkl и выгрузка в CSV для Letterboxd, IMDb и MovieLens.",
   "permissions": [
     "storage",
     "scripting",
@@ -14,9 +14,7 @@
     "*://*.themoviedb.org/*",
     "*://*.trakt.tv/*",
     "*://*.simkl.com/*",
-    "*://*.letterboxd.com/*",
-    "*://*.imdb.com/*",
-    "*://*.movielens.org/*"
+    "*://*.kinopoiskapiunofficial.tech/*"
   ],
   "action": {
     "default_popup": "dist/popup.html"
