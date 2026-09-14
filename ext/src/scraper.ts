@@ -161,6 +161,7 @@ export function parseKinopoiskPage(category: 'ratings' | 'watchlist'): {
       }
 
       items.push({
+        id: kpId,
         kpId,
         title,
         originalTitle,

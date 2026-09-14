@@ -179,25 +179,42 @@
       border: 1px solid var(--border-base);
       border-radius: var(--radius-md);
       padding: 3px;
-      gap: 4px;
+      gap: 2px;
+      width: 100%;
+      box-sizing: border-box;
     }
 
     .tab-btn {
-      flex: 1;
+      flex: 1 1 0;
+      min-width: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      padding: 8px 10px;
+      gap: 4px;
+      padding: 7px 3px;
       border: none;
       background: none;
       color: var(--text-secondary);
       font-family: var(--font-main);
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       border-radius: calc(var(--radius-md) - 3px);
       cursor: pointer;
       transition: all 0.15s ease;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tab-btn svg {
+      flex-shrink: 0;
+      width: 12px;
+      height: 12px;
+    }
+
+    .tab-btn span {
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
@@ -211,6 +228,169 @@
       color: #fff;
       font-weight: 700;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+
+    /* Second-level Service Tabs */
+    .service-nav-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding-bottom: 2px;
+      box-sizing: border-box;
+    }
+    .service-nav-wrapper::-webkit-scrollbar {
+      display: none;
+    }
+
+    .service-nav-tabs {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-md);
+      padding: 3px;
+      width: max-content;
+      min-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .service-tab-btn {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-main);
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: calc(var(--radius-md) - 4px);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .service-tab-btn:hover:not(.active) {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .service-tab-btn.active {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-weight: 700;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+
+    /* Service Toggle Switch */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-sm);
+      box-sizing: border-box;
+    }
+
+    .toggle-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .switch-control {
+      position: relative;
+      display: inline-block;
+      width: 32px;
+      height: 18px;
+      flex-shrink: 0;
+      margin: 0;
+    }
+
+    .switch-control input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      margin: 0;
+      position: absolute;
+    }
+
+    .switch-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: rgba(255, 255, 255, 0.15);
+      transition: 0.2s ease;
+      border-radius: 18px;
+    }
+
+    .switch-slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #fff;
+      transition: 0.2s ease;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    .switch-control input:checked + .switch-slider {
+      background-color: var(--accent-emerald);
+    }
+
+    .switch-control input:checked + .switch-slider:before {
+      transform: translateX(14px);
+    }
+
+    /* Service Info / Limitation Notice */
+    .service-desc-box {
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--text-secondary);
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-base);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-sizing: border-box;
+    }
+
+    .service-notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      font-size: 11px;
+      line-height: 1.4;
+      padding: 7px 9px;
+      border-radius: var(--radius-sm);
+      box-sizing: border-box;
+    }
+
+    .service-notice.warning {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      color: #fbbf24;
+    }
+
+    .service-notice.info {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      color: #93c5fd;
     }
 
     .tab-content {
@@ -816,6 +996,30 @@
       </button>
     </div>
 
+    <!-- Second-level Service Selector (top level so any service is one click away) -->
+    <div class="service-nav-wrapper" id="serviceNavWrapper">
+      <div class="service-nav-tabs">
+        <button class="service-tab-btn active" id="tabtmdbBtn" type="button">
+          <span data-i18n="svcTmdb">TMDB</span>
+        </button>
+        <button class="service-tab-btn" id="tabtraktBtn" type="button">
+          <span data-i18n="svcTrakt">Trakt</span>
+        </button>
+        <button class="service-tab-btn" id="tabsimklBtn" type="button">
+          <span data-i18n="svcSimkl">Simkl</span>
+        </button>
+        <button class="service-tab-btn" id="tabletterboxdBtn" type="button">
+          <span data-i18n="svcLetterboxd">Letterboxd</span>
+        </button>
+        <button class="service-tab-btn" id="tabimdbBtn" type="button">
+          <span data-i18n="svcImdb">IMDb</span>
+        </button>
+        <button class="service-tab-btn" id="tabmovielensBtn" type="button">
+          <span data-i18n="svcMovielens">MovieLens</span>
+        </button>
+      </div>
+    </div>
+
     <!-- TAB 1: MIGRATION & PROCESS CONTROL -->
     <div class="tab-content" id="tabMigration">
       <div class="glass-card">
@@ -825,6 +1029,11 @@
             <span data-i18n="processTitle">Управление процессом</span>
           </span>
           <span class="status-badge" id="statusBadge">IDLE</span>
+        </div>
+
+        <div class="service-notice warning" style="margin-bottom: 10px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <span data-i18n="kpSourceOnlyNotice">Кинопоиск является только источником данных и не поддерживает запись (нет публичного API).</span>
         </div>
 
         <div class="field-group">
@@ -861,8 +1070,8 @@
             <span class="current-title" id="progressTitle" data-i18n="readyTitle">Готов к запуску</span>
             <span id="progressPercent">0%</span>
           </div>
+          <div id="targetProgressList" style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px;"></div>
         </div>
-
         <div class="main-actions-row">
           <button class="btn btn-primary" id="scanBtn" title="Собрать оценки и список с Кинопоиска в память">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -947,54 +1156,345 @@
       </div>
     </div>
 
-    <!-- TAB 3: SETTINGS & API KEYS -->
+
+    <!-- SERVICE PANES (top-level siblings, toggled by the second-level selector) -->
+      <!-- SERVICE PANE: TMDB -->
+      <div class="tab-content tab-hidden" id="tabtmdb">
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--brand-tmdb);"></span>
+              <span data-i18n="tmdbTitle">The Movie Database (TMDB)</span>
+            </span>
+            <span class="ping-badge" id="tmdbPingBadge" style="display: none;">● <span id="tmdbPingText">OK</span></span>
+          </div>
+
+          <div class="service-desc-box">
+            <span data-i18n="tmdbDesc">Официальный API v3: полная синхронизация оценок и списка "Буду смотреть" (Watchlist).</span>
+          </div>
+
+          <div class="toggle-wrap">
+            <span class="toggle-label">
+              <span data-i18n="enableTargetLabel">Включить как цель синхронизации</span>
+            </span>
+            <label class="switch-control" for="tmdbEnableToggle">
+              <input type="checkbox" id="tmdbEnableToggle" checked />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="field-group" style="margin-bottom: 0;">
+            <label class="field-label" for="tmdbApiKey">
+              <span data-i18n="tmdbKeyLabel">TMDB v3 API Key</span>
+              <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color: var(--brand-tmdb); text-decoration: none; font-size: 10px; margin-left: auto;" data-i18n="getKeyLink">Получить ↗</a>
+            </label>
+            <div class="input-row">
+              <input type="password" id="tmdbApiKey" class="input-control" placeholder="TMDB v3 API Key" autocomplete="off" />
+              <input type="hidden" id="apiKey" />
+              <button class="btn btn-secondary" id="tmdbSaveBtn" style="min-width: 48px;" data-i18n="btnOk">ОК</button>
+              <button id="saveKeyBtn" style="display: none;"></button>
+            </div>
+          </div>
+
+          <div class="auth-status-bar">
+            <div class="auth-status-indicator">
+              <span class="dot" id="sessionDot"></span>
+              <span><span data-i18n="statusPrefix">Статус:</span> <strong id="tmdbSessionStatusText" style="color: #fff;">Не авторизован</strong><strong id="sessionStatusText" style="display: none;">Не авторизован</strong></span>
+            </div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <button class="btn btn-secondary" id="tmdbLoginBtn" style="height: 28px; padding: 0 10px; font-size: 11px;" data-i18n="btnLogin">Войти</button>
+              <button class="btn btn-primary" id="tmdbConfirmBtn" style="height: 28px; padding: 0 10px; font-size: 11px; display: none;" data-i18n="btnConfirm">Подтвердить</button>
+              <button id="tmdbExportBtn" style="display: none;"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SERVICE PANE: TRAKT -->
+      <div class="tab-content tab-hidden" id="tabtrakt">
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ed1c24;"></span>
+              <span data-i18n="traktTitle">Trakt.tv</span>
+            </span>
+            <span class="ping-badge" id="traktPingBadge" style="display: none;">● <span id="traktPingText">OK</span></span>
+          </div>
+
+          <div class="service-desc-box">
+            <span data-i18n="traktDesc">Синхронизация через Trakt API: отправка оценок (1-10) и добавление в Watchlist.</span>
+          </div>
+
+          <div class="service-notice info">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span data-i18n="traktAppNotice">Для обмена кодов авторизации (Device Code) требуется собственное Trakt OAuth-приложение со Client Secret.</span>
+          </div>
+
+          <div class="toggle-wrap">
+            <span class="toggle-label">
+              <span data-i18n="enableTargetLabel">Включить как цель синхронизации</span>
+            </span>
+            <label class="switch-control" for="traktEnableToggle">
+              <input type="checkbox" id="traktEnableToggle" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="traktClientId">
+              <span data-i18n="traktClientIdLabel">Trakt Client ID</span>
+              <a href="https://trakt.tv/oauth/applications" target="_blank" style="color: #ed1c24; text-decoration: none; font-size: 10px; margin-left: auto;" data-i18n="createAppLink">Создать App ↗</a>
+            </label>
+            <input type="text" id="traktClientId" class="input-control" placeholder="Trakt Client ID" autocomplete="off" />
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="traktClientSecret">
+              <span data-i18n="traktClientSecretLabel">Trakt Client Secret</span>
+            </label>
+            <input type="password" id="traktClientSecret" class="input-control" placeholder="Trakt Client Secret" autocomplete="off" />
+          </div>
+
+          <div class="service-desc-box">
+            <span data-i18n="traktAuthNotice">После сохранения ключей нажмите «Подключить» и подтвердите код на trakt.tv/activate.</span>
+          </div>
+
+          <div class="auth-status-bar">
+            <div class="auth-status-indicator">
+              <span class="dot" id="traktDot"></span>
+              <span data-i18n="statusPrefix">Статус:</span>
+              <strong id="traktStatusText" style="color:#fff;">—</strong>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button class="btn btn-secondary" id="traktSaveBtn" style="height: 28px; padding: 0 10px; font-size: 11px;" data-i18n="btnSave">Сохранить</button>
+              <button class="btn btn-primary" id="traktLoginBtn" style="height: 28px; padding: 0 10px; font-size: 11px;" data-i18n="btnConnect">Подключить</button>
+              <button id="traktExportBtn" style="display: none;"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SERVICE PANE: SIMKL -->
+      <div class="tab-content tab-hidden" id="tabsimkl">
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #00e054;"></span>
+              <span data-i18n="simklTitle">Simkl</span>
+            </span>
+            <span class="ping-badge" id="simklPingBadge" style="display: none;">● <span id="simklPingText">OK</span></span>
+          </div>
+
+          <div class="service-desc-box">
+            <span data-i18n="simklDesc">Синхронизация через Simkl API: передача оценок и добавление в Plan to Watch.</span>
+          </div>
+
+          <div class="service-notice info">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span data-i18n="simklAppNotice">Требуется Client ID приложения Simkl. Авторизация подтверждается PIN-кодом на сайте.</span>
+          </div>
+
+          <div class="toggle-wrap">
+            <span class="toggle-label">
+              <span data-i18n="enableTargetLabel">Включить как цель синхронизации</span>
+            </span>
+            <label class="switch-control" for="simklEnableToggle">
+              <input type="checkbox" id="simklEnableToggle" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="simklClientId">
+              <span data-i18n="simklClientIdLabel">Simkl Client ID</span>
+              <a href="https://simkl.com/settings/developer/new/" target="_blank" style="color: #00e054; text-decoration: none; font-size: 10px; margin-left: auto;" data-i18n="createAppLink">Создать App ↗</a>
+            </label>
+            <input type="text" id="simklClientId" class="input-control" placeholder="Simkl Client ID" autocomplete="off" />
+            <input type="hidden" id="simklClientSecret" />
+          </div>
+
+          <div class="service-desc-box">
+            <span data-i18n="simklAuthNotice">После сохранения Client ID нажмите «Подключить» и подтвердите PIN-код.</span>
+          </div>
+
+          <div class="auth-status-bar">
+            <div class="auth-status-indicator">
+              <span class="dot" id="simklDot"></span>
+              <span data-i18n="statusPrefix">Статус:</span>
+              <strong id="simklStatusText" style="color:#fff;">—</strong>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button class="btn btn-secondary" id="simklSaveBtn" style="height: 28px; padding: 0 10px; font-size: 11px;" data-i18n="btnSave">Сохранить</button>
+              <button class="btn btn-primary" id="simklLoginBtn" style="height: 28px; padding: 0 10px; font-size: 11px;" data-i18n="btnConnect">Подключить</button>
+              <button id="simklExportBtn" style="display: none;"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SERVICE PANE: LETTERBOXD -->
+      <div class="tab-content tab-hidden" id="tabletterboxd">
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #40bcf4;"></span>
+              <span data-i18n="letterboxdTitle">Letterboxd</span>
+            </span>
+            <span class="ping-badge" id="letterboxdPingBadge" style="display: none;">● <span id="letterboxdPingText">OK</span></span>
+          </div>
+
+          <div class="service-desc-box">
+            <span data-i18n="letterboxdDesc">Импорт через CSV: публичного write API у Letterboxd нет. Скачайте файл и загрузите на странице импорта.</span>
+          </div>
+
+          <div class="service-notice info">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span data-i18n="letterboxdLimitNotice">Letterboxd поддерживает загрузку файлов размером до 1 МБ на страницу импорта.</span>
+          </div>
+
+          <div class="toggle-wrap">
+            <span class="toggle-label">
+              <span data-i18n="enableTargetLabel">Включить как цель синхронизации</span>
+            </span>
+            <label class="switch-control" for="letterboxdEnableToggle">
+              <input type="checkbox" id="letterboxdEnableToggle" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div style="display: none;">
+            <input type="hidden" id="letterboxdClientId" />
+            <input type="hidden" id="letterboxdClientSecret" />
+            <button id="letterboxdSaveBtn"></button>
+            <button id="letterboxdLoginBtn"></button>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+            <button class="btn btn-primary" id="letterboxdExportBtn" style="width: 100%;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span data-i18n="btnExportLetterboxd">Скачать Letterboxd CSV</span>
+            </button>
+            <a href="https://letterboxd.com/import/" target="_blank" class="btn btn-secondary" style="width: 100%; text-decoration: none;" data-i18n="linkLetterboxdImport">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+              <span>Открыть импорт Letterboxd ↗</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- SERVICE PANE: IMDB -->
+      <div class="tab-content tab-hidden" id="tabimdb">
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f5c518;"></span>
+              <span data-i18n="imdbTitle">IMDb</span>
+            </span>
+            <span class="ping-badge" id="imdbPingBadge" style="display: none;">● <span id="imdbPingText">OK</span></span>
+          </div>
+
+          <div class="service-desc-box">
+            <span data-i18n="imdbDesc">Экспорт в формате IMDb CSV. Позволяет сохранить данные в стандартной схеме IMDb.</span>
+          </div>
+
+          <div class="service-notice warning">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span data-i18n="imdbNoImportNotice">Импорт в IMDb невозможен: сервис не предоставляет механизмов импорта или загрузки списков пользователями.</span>
+          </div>
+
+          <div class="toggle-wrap">
+            <span class="toggle-label">
+              <span data-i18n="enableTargetLabel">Включить как цель синхронизации</span>
+            </span>
+            <label class="switch-control" for="imdbEnableToggle">
+              <input type="checkbox" id="imdbEnableToggle" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div style="display: none;">
+            <input type="hidden" id="imdbClientId" />
+            <input type="hidden" id="imdbClientSecret" />
+            <button id="imdbSaveBtn"></button>
+            <button id="imdbLoginBtn"></button>
+          </div>
+
+          <div style="margin-top: 4px;">
+            <button class="btn btn-primary" id="imdbExportBtn" style="width: 100%;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span data-i18n="btnExportImdb">Скачать IMDb CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SERVICE PANE: MOVIELENS -->
+      <div class="tab-content tab-hidden" id="tabmovielens">
+        <div class="glass-card">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #6366f1;"></span>
+              <span data-i18n="movielensTitle">MovieLens</span>
+            </span>
+            <span class="ping-badge" id="movielensPingBadge" style="display: none;">● <span id="movielensPingText">OK</span></span>
+          </div>
+
+          <div class="service-desc-box">
+            <span data-i18n="movielensDesc">Экспорт датасета в формате MovieLens ratings.csv (userId, movieId, rating, timestamp).</span>
+          </div>
+
+          <div class="service-notice warning">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span data-i18n="movielensNoImportNotice">Импорт в MovieLens не поддерживается: это формат датасета для исследований, импорт пользователем не предусмотрен.</span>
+          </div>
+
+          <div class="toggle-wrap">
+            <span class="toggle-label">
+              <span data-i18n="enableTargetLabel">Включить как цель синхронизации</span>
+            </span>
+            <label class="switch-control" for="movielensEnableToggle">
+              <input type="checkbox" id="movielensEnableToggle" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div style="display: none;">
+            <input type="hidden" id="movielensClientId" />
+            <input type="hidden" id="movielensClientSecret" />
+            <button id="movielensSaveBtn"></button>
+            <button id="movielensLoginBtn"></button>
+          </div>
+
+          <div style="margin-top: 4px;">
+            <button class="btn btn-primary" id="movielensExportBtn" style="width: 100%;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span data-i18n="btnExportMovielens">Скачать MovieLens CSV</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    <!-- TAB 3: SETTINGS — Kinopoisk source credentials -->
     <div class="tab-content tab-hidden" id="tabSettings">
-      <div class="glass-card">
+      <!-- Kinopoisk Unofficial API Key Card (Global Source Helper) -->
+      <div class="glass-card" style="margin-top: 10px;">
         <div class="card-header">
           <span class="card-title">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-            <span data-i18n="authTitle">Авторизация и ключи API</span>
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--brand-kp);"></span>
+            <span data-i18n="kpSettingsTitle">Источник: Кинопоиск</span>
           </span>
-          <button class="btn btn-secondary" id="btnOpenGuideFromKeys" style="height: 24px; padding: 0 8px; font-size: 10px; gap: 4px;" data-i18n="btnHowToConnect">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-            <span>Как подключить?</span>
-          </button>
+          <span class="ping-badge" id="kpPingBadge" style="display: none;">● <span id="kpPingText">OK</span></span>
         </div>
-
-        <!-- TMDB Key -->
-        <div class="field-group">
-          <label class="field-label" for="apiKey">
-            <span data-i18n="tmdbKeyLabel">TMDB v3 API Key</span>
-            <span class="ping-badge" id="tmdbPingBadge" style="display: none;">● <span id="tmdbPingText">OK</span></span>
-            <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color: var(--brand-tmdb); text-decoration: none; font-size: 10px;" data-i18n="getKeyLink">Получить ↗</a>
-          </label>
-          <div class="input-row">
-            <input type="password" id="apiKey" class="input-control" placeholder="TMDB v3 API Key" autocomplete="off" />
-            <button class="btn btn-secondary" id="saveKeyBtn" style="min-width: 48px;" data-i18n="btnOk">ОК</button>
-          </div>
+        <div class="service-desc-box">
+          <span data-i18n="sourceNoticeKinopoisk">Кинопоиск — источник данных. У него нет API на запись, поэтому он не может быть получателем синхронизации.</span>
         </div>
-
-        <!-- TMDB Session status -->
-        <div class="auth-status-bar">
-          <div class="auth-status-indicator">
-            <span class="dot" id="sessionDot"></span>
-            <span><span data-i18n="statusPrefix">Статус:</span> <strong id="sessionStatusText" style="color: #fff;">Не авторизован</strong></span>
-          </div>
-          <div style="display: flex; gap: 4px; align-items: center;">
-            <button class="btn btn-secondary" id="tmdbLoginBtn" style="height: 28px; padding: 0 10px; font-size: 11px;" data-i18n="btnLogin">Войти</button>
-            <button class="btn btn-primary" id="tmdbConfirmBtn" style="height: 28px; padding: 0 10px; font-size: 11px; display: none;" data-i18n="btnConfirm">Подтвердить</button>
-          </div>
-        </div>
-
-        <!-- Kinopoisk Unofficial API Key -->
         <div class="field-group" style="margin-bottom: 0;">
           <label class="field-label" for="kpApiKey">
-            <span data-i18n="kpKeyLabel">Kinopoisk Unofficial API Key</span>
-            <span class="ping-badge" id="kpPingBadge" style="display: none;">● <span id="kpPingText">OK</span></span>
+            <span data-i18n="kpKeyLabel">Kinopoisk Unofficial API Key (для IMDb ID / обхода капчи)</span>
             <a href="https://kinopoiskapiunofficial.tech/" target="_blank" style="color: var(--brand-kp); text-decoration: none; font-size: 10px; margin-left: auto;" data-i18n="getKeyLink">Получить ↗</a>
           </label>
           <div class="input-row">
-            <input type="password" id="kpApiKey" class="input-control" placeholder="API Key для IMDb ID / обхода капчи" autocomplete="off" />
+            <input type="password" id="kpApiKey" class="input-control" placeholder="API Key Kinopoisk Unofficial" autocomplete="off" />
             <button class="btn btn-secondary" id="saveKpKeyBtn" style="min-width: 48px;" data-i18n="btnOk">ОК</button>
           </div>
         </div>
@@ -1071,6 +1571,33 @@
             <div class="guide-step-desc" data-i18n="step5Desc">
               Во вкладке «Экспорт CSV» скачивайте готовые таблицы с ID, названиями, годами, оценками и прямыми ссылками на КП.
             </div>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">6</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">
+              <span data-i18n="step6Title">Подключение Trakt и Simkl</span>
+            </div>
+            <div class="guide-step-desc" data-i18n="step6Desc">
+              Создайте свое приложение в Trakt (Client ID + Client Secret) или Simkl (Client ID), сохраните ключи и нажмите «Подключить» для OAuth-авторизации по коду или PIN.
+            </div>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">7</div>
+          <div class="guide-step-content">
+            <div class="guide-step-title">
+              <span data-i18n="step7Title">Импорт в Letterboxd, IMDb, MovieLens</span>
+            </div>
+            <div class="guide-step-desc" data-i18n="step7Desc">
+              Для Letterboxd скачайте CSV и загрузите на официальной странице импорта. В IMDb и MovieLens импорт отсутствует — доступен только экспорт данных.
+            </div>
+            <a href="https://letterboxd.com/import/" target="_blank" class="guide-link-btn" data-i18n="step7Link">
+              Открыть импорт Letterboxd ↗
+            </a>
           </div>
         </div>
       </div>

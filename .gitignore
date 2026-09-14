@@ -18,7 +18,6 @@ data/
 
 # opencode / agent runtime
 .opencode/
-openspec/
 
 # Node / Extension builds
 node_modules/

@@ -2,12 +2,21 @@ import {
   KPItem,
   MediaCategory,
   MigrationState,
+  MovieItem,
   RuntimeMessage,
+  ServiceId,
+  TargetProgress,
   TMDBAuth,
 } from './types';
 import { TMDBClient } from './tmdb';
 import { KPClient } from './kpClient';
 import { detectKinopoiskUserId, parseKinopoiskPage } from './scraper';
+import { MediaServicePort, ServiceRef } from './services/port';
+import { loadCredentials, saveCredentials, ServiceCredentials } from './services/credentials';
+import { createTmdbPort } from './services/tmdbPort';
+import { TraktPort } from './services/traktPort';
+import { SimklPort } from './services/simklPort';
+import { letterboxdPort, imdbPort, movieLensPort } from './services/csvPorts';
 
 const DEFAULT_STATE: MigrationState = {
   status: 'idle',
@@ -15,8 +24,10 @@ const DEFAULT_STATE: MigrationState = {
   totalFound: 0,
   scrapedCount: 0,
   syncedCount: 0,
+  skippedCount: 0,
   failedCount: 0,
   logs: [],
+  targets: [],
 };
 
 let currentState: MigrationState = { ...DEFAULT_STATE };
@@ -25,7 +36,7 @@ chrome.storage.local.get(['migrationState'], (res) => {
     currentState = { ...DEFAULT_STATE, ...res.migrationState };
   }
 });
-let tmdbClient: TMDBClient | null = null;
+
 let kpClient: KPClient | null = null;
 let isPaused = false;
 let isScanAborted = false;
@@ -33,11 +44,13 @@ let isSyncAborted = false;
 let isScanRunning = false;
 let isSyncRunning = false;
 let isAborted = false;
+
 function sleep(ms: number): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>();
   setTimeout(resolve, ms);
   return promise;
 }
+
 function navigateTabAndWait(tabId: number, url: string, timeoutMs: number = 15000): Promise<void> {
   const { promise, resolve, reject } = Promise.withResolvers<void>();
   let timer: number | null = null;
@@ -71,6 +84,16 @@ async function updateState(partial: Partial<MigrationState>) {
   await chrome.storage.local.set({ migrationState: currentState });
 }
 
+async function initFromStorage() {
+  const data = await chrome.storage.local.get(['migrationState', 'kpApiKey']);
+  if (data.migrationState) {
+    currentState = { ...DEFAULT_STATE, ...data.migrationState };
+  }
+  if (data.kpApiKey) {
+    kpClient = new KPClient(data.kpApiKey);
+  }
+}
+
 // Load persisted state & credentials on startup
 chrome.runtime.onInstalled.addListener(async () => {
   await initFromStorage();
@@ -80,16 +103,76 @@ chrome.runtime.onStartup.addListener(async () => {
   await initFromStorage();
 });
 
-async function initFromStorage() {
-  const data = await chrome.storage.local.get(['migrationState', 'tmdbAuth', 'kpApiKey']);
-  if (data.migrationState) {
-    currentState = data.migrationState;
+function isAuthExpiredError(err: unknown): boolean {
+  if (!err) return false;
+  if (typeof err === 'object') {
+    const rec = err as Record<string, unknown>;
+    if (rec.name === 'AuthExpiredError' || rec.code === 'AUTH_EXPIRED') {
+      return true;
+    }
   }
-  if (data.tmdbAuth?.apiKey) {
-    tmdbClient = new TMDBClient(data.tmdbAuth);
+  if (err instanceof Error && (err.name === 'AuthExpiredError' || (err as { code?: string }).code === 'AUTH_EXPIRED')) {
+    return true;
   }
-  if (data.kpApiKey) {
-    kpClient = new KPClient(data.kpApiKey);
+  return false;
+}
+
+async function getPortForService(
+  serviceId: ServiceId,
+  customCreds?: ServiceCredentials
+): Promise<MediaServicePort> {
+  const creds = customCreds ?? (await loadCredentials(serviceId));
+
+  switch (serviceId) {
+    case 'tmdb': {
+      if (!creds?.apiKey) {
+        throw new Error('TMDB API Key не настроен. Настройте ключ в секции API.');
+      }
+      return createTmdbPort(creds);
+    }
+    case 'trakt': {
+      if (!creds?.clientId) {
+        throw new Error('Trakt client_id не настроен. Зарегистрируйте приложение в настройках Trakt.');
+      }
+      return new TraktPort(
+        {
+          clientId: creds.clientId,
+          clientSecret: creds.clientSecret,
+          accessToken: creds.accessToken,
+        },
+        {
+          onLog: (msg) => {
+            logMessage(`[Trakt] ${msg}`, 'warn').catch(() => {});
+          },
+        }
+      );
+    }
+    case 'simkl': {
+      if (!creds?.clientId) {
+        throw new Error('Simkl client_id не настроен. Зарегистрируйте приложение в настройках Simkl.');
+      }
+      return new SimklPort(
+        {
+          clientId: creds.clientId,
+          accessToken: creds.accessToken,
+        },
+        {
+          onLog: (msg) => {
+            logMessage(`[Simkl] ${msg}`, 'warn').catch(() => {});
+          },
+        }
+      );
+    }
+    case 'letterboxd':
+      return letterboxdPort;
+    case 'imdb':
+      return imdbPort;
+    case 'movielens':
+      return movieLensPort;
+    default: {
+      const _exhaustive: never = serviceId;
+      throw new Error(`Неизвестный сервис: ${_exhaustive}`);
+    }
   }
 }
 
@@ -106,11 +189,11 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
         case 'SAVE_API_KEY': {
           const auth: TMDBAuth = { apiKey: message.apiKey };
           await chrome.storage.local.set({ tmdbAuth: auth });
-          tmdbClient = new TMDBClient(auth);
           await logMessage('TMDB API Key сохранен', 'success');
           sendResponse({ success: true });
           break;
         }
+
         case 'SAVE_KP_API_KEY': {
           await chrome.storage.local.set({ kpApiKey: message.kpApiKey });
           kpClient = new KPClient(message.kpApiKey);
@@ -121,6 +204,10 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
 
         case 'PING_TMDB_KEY': {
           const key = message.apiKey;
+          if (!key) {
+            sendResponse({ success: false, valid: false, error: 'API Key не указан' });
+            break;
+          }
           const client = new TMDBClient({ apiKey: key });
           const valid = await client.pingKey();
           sendResponse({ success: true, valid });
@@ -129,6 +216,10 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
 
         case 'PING_KP_KEY': {
           const key = message.kpApiKey;
+          if (!key) {
+            sendResponse({ success: false, valid: false, error: 'API Key не указан' });
+            break;
+          }
           const client = new KPClient(key);
           const valid = await client.pingKey();
           sendResponse({ success: true, valid });
@@ -136,82 +227,139 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
         }
 
         case 'TMDB_START_AUTH': {
-          if (!tmdbClient) {
-            const data = await chrome.storage.local.get('tmdbAuth');
-            if (data.tmdbAuth?.apiKey) {
-              tmdbClient = new TMDBClient(data.tmdbAuth);
-            } else {
-              throw new Error('Сначала укажите API Key TMDB.');
-            }
+          const data = await chrome.storage.local.get('tmdbAuth');
+          if (!data.tmdbAuth?.apiKey) {
+            sendResponse({ success: false, error: 'Сначала укажите API Key TMDB.' });
+            break;
           }
-          const requestToken = await tmdbClient.createRequestToken();
-          await chrome.storage.local.set({ tmdbPendingToken: requestToken });
+          const client = new TMDBClient(data.tmdbAuth);
+          const requestToken = await client.createRequestToken();
+          await chrome.storage.local.set({ tmdbRequestToken: requestToken });
           const authUrl = `https://www.themoviedb.org/authenticate/${requestToken}`;
           await chrome.tabs.create({ url: authUrl });
-          await logMessage('Открыта страница авторизации TMDB', 'info');
           sendResponse({ success: true, requestToken });
           break;
         }
 
         case 'TMDB_COMPLETE_AUTH': {
-          if (!tmdbClient) {
-            const data = await chrome.storage.local.get('tmdbAuth');
-            if (data.tmdbAuth?.apiKey) {
-              tmdbClient = new TMDBClient(data.tmdbAuth);
-            } else {
-              throw new Error('Клиент TMDB не инициализирован.');
-            }
-          }
-          let token = message.requestToken;
-          if (!token) {
-            const pending = await chrome.storage.local.get('tmdbPendingToken');
-            token = pending.tmdbPendingToken;
-          }
-          if (!token) {
-            throw new Error('Отсутствует request_token для подтверждения.');
-          }
-          const sessionId = await tmdbClient.createSession(token);
           const data = await chrome.storage.local.get('tmdbAuth');
-          const auth: TMDBAuth = { ...data.tmdbAuth, sessionId };
-          await chrome.storage.local.set({ tmdbAuth: auth });
-          
-          let username = 'TMDB User';
-          try {
-            const acc = await tmdbClient.getAccountDetails(sessionId);
-            if (acc?.username) username = acc.username;
-          } catch {
-            // ignore
+          if (!data.tmdbAuth?.apiKey) {
+            sendResponse({ success: false, error: 'API key not configured' });
+            break;
           }
-          await logMessage(`Авторизация TMDB успешно завершена! Пользователь: ${username}`, 'success');
-          sendResponse({ success: true, sessionId, username });
+          const client = new TMDBClient(data.tmdbAuth);
+          const sessionId = await client.createSession(message.requestToken);
+          client.setSessionId(sessionId);
+          const account = await client.getAccountDetails();
+
+          const updatedAuth: TMDBAuth = {
+            ...data.tmdbAuth,
+            sessionId,
+            accountId: String(account.id),
+            username: account.username,
+          };
+          await chrome.storage.local.set({ tmdbAuth: updatedAuth });
+          await logMessage(`TMDB авторизован: @${account.username}`, 'success');
+          sendResponse({ success: true, username: account.username });
+          break;
+        }
+
+        case 'SAVE_SERVICE_CREDENTIALS': {
+          await saveCredentials(message.service, message.credentials);
+          await logMessage(`Учетные данные для ${message.service} сохранены`, 'success');
+          sendResponse({ success: true });
+          break;
+        }
+
+        case 'PING_SERVICE': {
+          try {
+            const port = await getPortForService(message.service);
+            const valid = await port.ping();
+            sendResponse({ success: true, valid });
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            sendResponse({ success: false, valid: false, error: errMsg });
+          }
+          break;
+        }
+
+        case 'TOGGLE_TARGET': {
+          const targetMap = new Map<ServiceId, TargetProgress>();
+          for (const t of currentState.targets ?? []) {
+            targetMap.set(t.service, { ...t });
+          }
+
+          if (message.enabled) {
+            if (!targetMap.has(message.service)) {
+              targetMap.set(message.service, {
+                service: message.service,
+                synced: 0,
+                skipped: 0,
+                failed: 0,
+                total: 0,
+                status: 'pending',
+              });
+            }
+          } else {
+            targetMap.delete(message.service);
+          }
+
+          const updatedTargets = Array.from(targetMap.values());
+          await updateState({ targets: updatedTargets });
+          sendResponse({ success: true });
+          break;
+        }
+
+        case 'EXPORT_SERVICE_CSV': {
+          try {
+            const stored = await chrome.storage.local.get(['lastScrapedItems', 'scrapedItems']);
+            const items: MovieItem[] = stored.lastScrapedItems || stored.scrapedItems || [];
+            if (!Array.isArray(items) || items.length === 0) {
+              sendResponse({ success: false, error: 'Нет собранных данных для экспорта' });
+              break;
+            }
+
+            const port = await getPortForService(message.service);
+            const files = port.exportCsv(items);
+            sendResponse({ success: true, files });
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            sendResponse({ success: false, error: errMsg });
+          }
           break;
         }
 
         case 'START_SCANNING': {
           isScanAborted = false;
           isPaused = false;
-          runScanningOnly(message.category, message.delayMs || 2500).catch(async (err: unknown) => {
+          isScanRunning = true;
+          runScanningOnly(message.category, message.delayMs || 2500, message.targetUserId).catch(async (err: unknown) => {
             const errMsg = err instanceof Error ? err.message : String(err);
             await logMessage(`Ошибка сбора данных: ${errMsg}`, 'error');
             await updateState({ status: 'error', errorMessage: errMsg });
+          }).finally(() => {
+            isScanRunning = false;
           });
           sendResponse({ success: true });
           break;
         }
 
-        case 'START_MIGRATION': {
+        case 'START_SYNC': {
           isSyncAborted = false;
           isAborted = false;
           isPaused = false;
           isSyncRunning = true;
-          runMigration(message.category, message.delayMs || 2500).catch(async (err: unknown) => {
+          runSync(message.targets, message.category, message.delayMs || 2500).catch(async (err: unknown) => {
             const errMsg = err instanceof Error ? err.message : String(err);
-            await logMessage(`Критическая ошибка миграции: ${errMsg}`, 'error');
+            await logMessage(`Критическая ошибка синхронизации: ${errMsg}`, 'error');
             await updateState({ status: 'error', errorMessage: errMsg });
+          }).finally(() => {
+            isSyncRunning = false;
           });
           sendResponse({ success: true });
           break;
         }
+
         case 'STOP_PROCESS': {
           isScanAborted = true;
           isSyncAborted = true;
@@ -224,6 +372,7 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
           sendResponse({ success: true });
           break;
         }
+
         case 'PAUSE_MIGRATION': {
           isPaused = true;
           await updateState({ status: 'paused_captcha' });
@@ -241,10 +390,18 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
 
         case 'RESET_STATE': {
           isAborted = true;
+          isScanAborted = true;
+          isSyncAborted = true;
           isPaused = false;
           currentState = { ...DEFAULT_STATE };
           await chrome.storage.local.set({ migrationState: currentState });
           sendResponse({ success: true });
+          break;
+        }
+
+        default: {
+          const _unknown: { action: string } = message;
+          sendResponse({ success: false, error: `Неизвестное действие: ${_unknown.action}` });
           break;
         }
       }
@@ -258,7 +415,11 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
   return true; // Keep message channel open for async sendResponse
 });
 
-async function collectKinopoiskItems(category: MediaCategory, delayMs: number): Promise<MovieItem[]> {
+async function collectKinopoiskItems(
+  category: MediaCategory,
+  delayMs: number,
+  targetUserId?: string
+): Promise<MovieItem[]> {
   await updateState({
     status: 'detecting',
     category,
@@ -266,79 +427,98 @@ async function collectKinopoiskItems(category: MediaCategory, delayMs: number): 
   });
 
   const tabs = await chrome.tabs.query({ url: '*://*.kinopoisk.ru/*' });
-  if (tabs.length === 0 || !tabs[0].id) {
-    throw new Error('Откройте вкладку Кинопоиска в браузере.');
-  }
+  const kpTab = tabs[0];
+  let tabId = kpTab?.id;
 
-  const kpTabId = tabs[0].id;
-  await logMessage('Поиск профиля Кинопоиска...', 'info');
-
-  const execRes = await chrome.scripting.executeScript({
-    target: { tabId: kpTabId },
-    func: detectKinopoiskUserId,
-  });
-
-  let userId = execRes?.[0]?.result;
-  if (!userId) {
-    await logMessage('ID пользователя не найден в DOM. Переход на профиль...', 'warn');
-    await navigateTabAndWait(kpTabId, 'https://www.kinopoisk.ru/');
-    await sleep(2000);
-    const retryRes = await chrome.scripting.executeScript({
-      target: { tabId: kpTabId },
-      func: detectKinopoiskUserId,
+  if (!tabId) {
+    const newTab = await chrome.tabs.create({
+      url: 'https://www.kinopoisk.ru/',
+      active: false,
     });
-    userId = retryRes?.[0]?.result;
+    tabId = newTab.id!;
+    await navigateTabAndWait(tabId, 'https://www.kinopoisk.ru/');
+    await sleep(2000);
+  }
+
+  let userId: string | null = targetUserId || null;
+  if (!userId) {
+    try {
+      const uidResults = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: detectKinopoiskUserId,
+      });
+      userId = uidResults?.[0]?.result || null;
+    } catch {
+      userId = null;
+    }
   }
 
   if (!userId) {
-    throw new Error('Не удалось определить ID пользователя Кинопоиска. Убедитесь, что вы авторизованы.');
+    await updateState({ status: 'error', errorMessage: 'Не удалось определить ID пользователя Кинопоиска' });
+    throw new Error('ID пользователя Кинопоиска не найден. Войдите в профиль Кинопоиска в соседней вкладке.');
   }
 
   await updateState({ userId, status: 'scraping' });
-  await logMessage(`Определен профиль Кинопоиска: ID ${userId}`, 'success');
+  await logMessage(`Обнаружен пользователь Кинопоиска ID: ${userId}`, 'info');
 
-  const categoriesToScrape: Array<'ratings' | 'watchlist'> =
+  const categoriesToScrape: ('ratings' | 'watchlist')[] =
     category === 'both' ? ['ratings', 'watchlist'] : [category];
 
   const scrapedItems: MovieItem[] = [];
 
   for (const cat of categoriesToScrape) {
-    const catName = cat === 'ratings' ? 'Оценки' : 'Буду смотреть';
-    await logMessage(`Начало сбора категории: ${catName}`, 'info');
+    if (isAborted || isScanAborted) {
+      await logMessage('Сбор данных отменен пользователем.', 'warn');
+      await updateState({ status: 'idle', currentTitle: undefined });
+      return scrapedItems;
+    }
+
+    const catLabel = cat === 'ratings' ? 'оценок' : 'списка "Буду смотреть"';
+    await logMessage(`Начало сбора ${catLabel}...`, 'info');
 
     let page = 1;
-    let consecutiveEmptyPages = 0;
+    let hasMorePages = true;
 
-    while (page <= 200) {
-      if (isScanAborted) {
-        await logMessage(`Сбор категории "${catName}" отменен пользователем.`, 'warn');
-        isScanRunning = false;
-        return scrapedItems;
-      }
+    while (hasMorePages && !isAborted && !isScanAborted) {
       if (isPaused) {
-        while (isPaused && !isScanAborted) {
+        await logMessage('Сбор приостановлен...', 'warn');
+        while (isPaused && !isAborted && !isScanAborted) {
           await sleep(1000);
         }
-        if (isScanAborted) {
-          isScanRunning = false;
-          return scrapedItems;
-        }
+        if (isAborted || isScanAborted) break;
       }
+
       const pageUrl =
         cat === 'ratings'
-          ? `https://www.kinopoisk.ru/user/${userId}/movies/voted-watched/?page=${page}`
-          : `https://www.kinopoisk.ru/user/${userId}/movies/planned-to-watch/?page=${page}`;
+          ? `https://www.kinopoisk.ru/user/${userId}/votes/list/vs/vote/page/${page}/#list`
+          : `https://www.kinopoisk.ru/user/${userId}/movies/list/type/3554/sort/default/vector/desc/page/${page}/#list`;
 
-      await navigateTabAndWait(kpTabId, pageUrl);
-      await sleep(delayMs);
-
-      const pageRes = await chrome.scripting.executeScript({
-        target: { tabId: kpTabId },
-        func: parseKinopoiskPage,
-        args: [cat],
+      await updateState({
+        currentTitle: `Страница ${page} (${cat === 'ratings' ? 'Оценки' : 'Буду смотреть'})`,
       });
 
-      const res = pageRes?.[0]?.result as ScrapedPageResult | undefined;
+      try {
+        await navigateTabAndWait(tabId, pageUrl);
+        await sleep(delayMs);
+      } catch (navErr) {
+        await logMessage(`Ошибка перехода на страницу ${page}: ${navErr}`, 'warn');
+      }
+
+      let pageRes;
+      try {
+        pageRes = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: parseKinopoiskPage,
+          args: [cat],
+        });
+      } catch (execErr) {
+        await logMessage(`Ошибка скрипта на стр. ${page}: ${execErr}`, 'error');
+        break;
+      }
+
+      const res = pageRes?.[0]?.result as
+        | { items: KPItem[]; hasCaptcha: boolean; totalCountOnPage: number }
+        | undefined;
 
       if (!res) {
         page++;
@@ -348,52 +528,73 @@ async function collectKinopoiskItems(category: MediaCategory, delayMs: number): 
       if (res.hasCaptcha) {
         isPaused = true;
         await updateState({ status: 'paused_captcha' });
-        await logMessage(`Обнаружена капча Кинопоиска на странице ${page}! Решите её в браузере и нажмите "Продолжить".`, 'warn');
-        while (isPaused) {
-          await sleep(1000);
+        await logMessage(`Капча на странице ${page}! Пройдите капчу в открытой вкладке и нажмите "Возобновить"`, 'warn');
+        while (isPaused && !isAborted && !isScanAborted) {
+          await sleep(2000);
         }
+        if (isAborted || isScanAborted) break;
         continue;
       }
 
       if (res.items.length === 0) {
-        await logMessage(`Страница ${page} пуста (найдено 0 карточек, URL: ${res.url})`, 'info');
-        consecutiveEmptyPages++;
-        if (consecutiveEmptyPages >= 2) {
-          await logMessage(`Категория "${catName}" завершена на странице ${page}`, 'info');
-          break;
-        }
-      } else {
-        consecutiveEmptyPages = 0;
-        scrapedItems.push(...res.items);
-        await updateState({
-          scrapedCount: scrapedItems.length,
-          totalFound: scrapedItems.length,
-        });
-        await logMessage(`Страница ${page}: собрано ${res.items.length} элементов (всего: ${scrapedItems.length})`, 'info');
+        hasMorePages = false;
+        break;
       }
 
-      page++;
+      const movieItems: MovieItem[] = res.items.map((it) => ({
+        id: it.id,
+        kpId: it.id,
+        title: it.title,
+        originalTitle: it.originalTitle,
+        year: it.year,
+        rating: it.rating,
+        category: it.category,
+      }));
+
+      scrapedItems.push(...movieItems);
+      await updateState({
+        scrapedCount: scrapedItems.length,
+        totalFound: scrapedItems.length,
+      });
+
+      await logMessage(`Стр. ${page}: найдено ${res.items.length} элементов (всего: ${scrapedItems.length})`, 'info');
+
+      if (res.items.length < 25) {
+        hasMorePages = false;
+      } else {
+        page++;
+      }
     }
   }
 
-  // Store all scraped items in storage so user can export CSV anytime
   await chrome.storage.local.set({ lastScrapedItems: scrapedItems, scrapedItems });
   return scrapedItems;
 }
 
-async function runScanningOnly(category: MediaCategory, delayMs: number) {
-  const items = await collectKinopoiskItems(category, delayMs);
+async function runScanningOnly(category: MediaCategory, delayMs: number, targetUserId?: string) {
+  const items = await collectKinopoiskItems(category, delayMs, targetUserId);
   await updateState({
     status: 'completed',
     currentTitle: undefined,
   });
-  await logMessage(`Сканирование завершено! Собрано ${items.length} элементов Кинопоиска. Теперь доступен экспорт!`, 'success');
+  await logMessage(`Сканирование завершено! Собрано ${items.length} элементов Кинопоиска. Теперь доступен экспорт и синхронизация!`, 'success');
 }
 
-async function runMigration(category: MediaCategory, delayMs: number) {
+function dedupeKey(ref: ServiceRef): string[] {
+  const keys: string[] = [];
+  keys.push(ref.id);
+  keys.push(`${ref.mediaType}_${ref.id}`);
+  keys.push(`${ref.mediaType}:${ref.id}`);
+  return keys;
+}
+
+async function runSync(
+  targets: ServiceId[],
+  category: MediaCategory,
+  delayMs: number
+) {
   let scrapedItems: MovieItem[] = [];
-  
-  // If we already have items in storage from scanning, reuse them
+
   const stored = await chrome.storage.local.get(['lastScrapedItems', 'scrapedItems']);
   const existingItems = stored.lastScrapedItems || stored.scrapedItems;
   if (Array.isArray(existingItems) && existingItems.length > 0) {
@@ -403,113 +604,313 @@ async function runMigration(category: MediaCategory, delayMs: number) {
     scrapedItems = await collectKinopoiskItems(category, delayMs);
   }
 
-  if (!tmdbClient) {
-    const data = await chrome.storage.local.get('tmdbAuth');
-    if (data.tmdbAuth?.apiKey) {
-      tmdbClient = new TMDBClient(data.tmdbAuth);
-    } else {
-      throw new Error('TMDB API Key не настроен. Настройте ключ в секции API.');
-    }
+  if (scrapedItems.length === 0) {
+    await updateState({ status: 'completed', currentTitle: undefined });
+    await logMessage('Нет элементов для синхронизации.', 'info');
+    return;
   }
 
-  // Step 2: TMDB Migration
-  await updateState({ status: 'migrating' });
-  await logMessage(`Начало переноса в TMDB. Всего к обработке: ${scrapedItems.length}`, 'info');
-  let synced = 0;
-  let failed = 0;
-  let skipped = 0;
+  const enabledTargets = targets.filter(
+    (t) => t === 'tmdb' || t === 'trakt' || t === 'simkl'
+  );
 
-  // Preload existing ratings and watchlist from TMDB account to avoid duplicates
-  await logMessage('Загрузка существующих оценок и списка отложенного из TMDB для сверки...', 'info');
-  const [existingRatings, existingWatchlist] = await Promise.all([
-    tmdbClient.getAllRatedIds().catch(() => new Map<string, number>()),
-    tmdbClient.getAllWatchlistIds().catch(() => new Set<string>()),
-  ]);
-  await logMessage(`Найдено на TMDB: ${existingRatings.size} уже оцененных, ${existingWatchlist.size} в Watchlist. Дублей не будет.`, 'info');
-  for (const item of scrapedItems) {
-    if (isAborted) {
-      await logMessage('Перенос в TMDB прерван пользователем.', 'warn');
-      await updateState({ status: 'idle', currentTitle: undefined });
+  if (enabledTargets.length === 0) {
+    await updateState({ status: 'idle', currentTitle: undefined });
+    await logMessage('Нет активных API-сервисов для синхронизации.', 'warn');
+    return;
+  }
+
+  // Initialize per-target progress in state
+  const targetProgressMap = new Map<ServiceId, TargetProgress>();
+  for (const t of enabledTargets) {
+    targetProgressMap.set(t, {
+      service: t,
+      synced: 0,
+      skipped: 0,
+      failed: 0,
+      total: 0,
+      status: 'running',
+    });
+  }
+
+  await updateState({
+    status: 'migrating',
+    targets: Array.from(targetProgressMap.values()),
+    syncedCount: 0,
+    skippedCount: 0,
+    failedCount: 0,
+  });
+
+  const aggregateProgress = async () => {
+    let sumSynced = 0;
+    let sumSkipped = 0;
+    let sumFailed = 0;
+    const progressList = Array.from(targetProgressMap.values());
+    for (const p of progressList) {
+      sumSynced += p.synced;
+      sumSkipped += p.skipped;
+      sumFailed += p.failed;
+    }
+    await updateState({
+      targets: progressList,
+      syncedCount: sumSynced,
+      skippedCount: sumSkipped,
+      failedCount: sumFailed,
+    });
+  };
+
+  // Run per-target independently
+  const runTarget = async (serviceId: ServiceId) => {
+    const progress = targetProgressMap.get(serviceId)!;
+
+    let port: MediaServicePort;
+    try {
+      port = await getPortForService(serviceId);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      progress.status = 'failed';
+      progress.error = errMsg;
+      await logMessage(`[${serviceId}] Ошибка инициализации сервиса: ${errMsg}`, 'error');
+      await aggregateProgress();
       return;
     }
-    if (isPaused) {
-      while (isPaused && !isAborted) {
-        await sleep(1000);
-      }
-      if (isAborted) {
-        await logMessage('Перенос в TMDB прерван пользователем.', 'warn');
-        await updateState({ status: 'idle', currentTitle: undefined });
+
+    let existingRatings = new Map<string, number>();
+    let existingWatchlist = new Set<string>();
+
+    try {
+      await logMessage(`[${serviceId}] Загрузка существующих оценок и списка "Буду смотреть"...`, 'info');
+      const [ratings, watchlist] = await Promise.all([
+        port.fetchExistingRatings().catch((err: unknown) => {
+          if (isAuthExpiredError(err)) throw err;
+          logMessage(`[${serviceId}] Не удалось загрузить существующие оценки: ${err}`, 'warn');
+          return new Map<string, number>();
+        }),
+        port.fetchExistingWatchlist().catch((err: unknown) => {
+          if (isAuthExpiredError(err)) throw err;
+          logMessage(`[${serviceId}] Не удалось загрузить существующий Watchlist: ${err}`, 'warn');
+          return new Set<string>();
+        }),
+      ]);
+      existingRatings = ratings;
+      existingWatchlist = watchlist;
+      await logMessage(
+        `[${serviceId}] Найдено: ${existingRatings.size} оценок, ${existingWatchlist.size} в Watchlist`,
+        'info'
+      );
+    } catch (err: unknown) {
+      if (isAuthExpiredError(err)) {
+        progress.status = 'failed';
+        progress.error = 'AUTH_EXPIRED';
+        await logMessage(`[${serviceId}] Авторизация истекла (AUTH_EXPIRED)`, 'error');
+        await aggregateProgress();
         return;
       }
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await logMessage(`[${serviceId}] Ошибка загрузки существующих данных: ${errMsg}`, 'warn');
     }
-    await updateState({ currentTitle: `${item.title} (${item.year || '?'})` });
 
-    const kinopoiskId = item.kpId || item.id;
-    if (kpClient && kinopoiskId && !item.imdbId) {
-      try {
-        const details = await kpClient.getFilmDetails(kinopoiskId);
-        if (details) {
-          if (details.imdbId) item.imdbId = details.imdbId;
-          if (details.nameOriginal && !item.originalTitle) item.originalTitle = details.nameOriginal;
-        }
-      } catch {
-        // ignore enrichment error, proceed with normal search
+    for (const item of scrapedItems) {
+      if (isAborted || isSyncAborted) {
+        await logMessage(`[${serviceId}] Синхронизация прервана пользователем.`, 'warn');
+        progress.status = 'skipped';
+        await aggregateProgress();
+        return;
       }
-    }
-    try {
-      const match = await tmdbClient.findBestMatch(item);
-      if (!match) {
-        failed++;
-        await updateState({ failedCount: failed });
-        await logMessage(`Не найден в TMDB: "${item.title}" (${item.year || '?'})`, 'warn');
+
+      if (isPaused) {
+        while (isPaused && !isAborted && !isSyncAborted) {
+          await sleep(1000);
+        }
+        if (isAborted || isSyncAborted) {
+          await logMessage(`[${serviceId}] Синхронизация прервана пользователем.`, 'warn');
+          progress.status = 'skipped';
+          await aggregateProgress();
+          return;
+        }
+      }
+
+      await updateState({ currentTitle: `[${serviceId}] ${item.title} (${item.year || '?'})` });
+
+      // Kinopoisk Unofficial enrichment if needed
+      const kinopoiskId = item.kpId || item.id;
+      if (kpClient && kinopoiskId && !item.imdbId) {
+        try {
+          const details = await kpClient.getFilmDetails(kinopoiskId);
+          if (details) {
+            if (details.imdbId) item.imdbId = details.imdbId;
+            if (details.nameOriginal && !item.originalTitle) item.originalTitle = details.nameOriginal;
+          }
+        } catch {
+          // ignore enrichment error
+        }
+      }
+
+      let ref: ServiceRef | null = null;
+      try {
+        ref = await port.resolve(item);
+      } catch (err: unknown) {
+        if (isAuthExpiredError(err)) {
+          progress.status = 'failed';
+          progress.error = 'AUTH_EXPIRED';
+          await logMessage(`[${serviceId}] Авторизация истекла при поиске "${item.title}"`, 'error');
+          await aggregateProgress();
+          return;
+        }
+        progress.failed++;
+        await aggregateProgress();
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await logMessage(`[${serviceId}] Ошибка поиска "${item.title}": ${errMsg}`, 'warn');
         continue;
       }
 
-      const mediaKey = `${match.media_type}_${match.id}`;
-      if (item.category === 'ratings' && item.rating) {
-        const existingRating = existingRatings.get(mediaKey);
-        if (existingRating !== undefined) {
-          skipped++;
-          await logMessage(`Пропуск: "${item.title}" уже имеет оценку на TMDB (${existingRating}/10)`, 'info');
-          continue;
-        }
-        await tmdbClient.rateMedia(match.id, match.media_type, item.rating);
-        existingRatings.set(mediaKey, item.rating);
-        synced++;
-        await updateState({ syncedCount: synced });
-        await logMessage(`Оценка выставлена: "${item.title}" -> ${match.title || match.name} (${item.rating}/10)`, 'success');
-      } else if (item.category === 'watchlist') {
-        if (existingWatchlist.has(mediaKey)) {
-          skipped++;
-          await logMessage(`Пропуск: "${item.title}" уже находится в Watchlist TMDB`, 'info');
-          continue;
-        }
-        await tmdbClient.addToWatchlist(match.id, match.media_type);
-        existingWatchlist.add(mediaKey);
-        synced++;
-        await updateState({ syncedCount: synced });
-        await logMessage(`Добавлено в Watchlist: "${item.title}" -> ${match.title || match.name}`, 'success');
+      if (!ref) {
+        progress.failed++;
+        await aggregateProgress();
+        await logMessage(`[${serviceId}] Не найден: "${item.title}" (${item.year || '?'})`, 'warn');
+        continue;
       }
-    } catch (err: unknown) {
-      failed++;
-      await updateState({ failedCount: failed });
-      const errMsg = err instanceof Error ? err.message : String(err);
-      await logMessage(`Ошибка отправки "${item.title}": ${errMsg}`, 'error');
+
+      const keys = dedupeKey(ref);
+      if (item.category === 'ratings' && item.rating) {
+        let isExisting = false;
+        let existingVal: number | undefined;
+        for (const k of keys) {
+          if (existingRatings.has(k)) {
+            isExisting = true;
+            existingVal = existingRatings.get(k);
+            break;
+          }
+        }
+
+        if (isExisting) {
+          progress.skipped++;
+          await aggregateProgress();
+          await logMessage(
+            `[${serviceId}] Пропуск: "${item.title}" уже имеет оценку (${existingVal ?? '?'})`,
+            'info'
+          );
+          continue;
+        }
+
+        try {
+          await port.pushRating(ref, item.rating);
+          for (const k of keys) {
+            existingRatings.set(k, item.rating);
+          }
+          progress.synced++;
+          await aggregateProgress();
+          await logMessage(
+            `[${serviceId}] Оценка выставлена: "${item.title}" -> ${ref.label || ref.id} (${item.rating})`,
+            'success'
+          );
+        } catch (err: unknown) {
+          if (isAuthExpiredError(err)) {
+            progress.status = 'failed';
+            progress.error = 'AUTH_EXPIRED';
+            await logMessage(`[${serviceId}] Авторизация истекла при выставлении оценки`, 'error');
+            await aggregateProgress();
+            return;
+          }
+          progress.failed++;
+          await aggregateProgress();
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await logMessage(`[${serviceId}] Ошибка выставления оценки "${item.title}": ${errMsg}`, 'error');
+        }
+      } else if (item.category === 'watchlist') {
+        let isExisting = false;
+        for (const k of keys) {
+          if (existingWatchlist.has(k)) {
+            isExisting = true;
+            break;
+          }
+        }
+
+        if (isExisting) {
+          progress.skipped++;
+          await aggregateProgress();
+          await logMessage(
+            `[${serviceId}] Пропуск: "${item.title}" уже находится в Watchlist`,
+            'info'
+          );
+          continue;
+        }
+
+        try {
+          await port.pushWatchlist(ref);
+          for (const k of keys) {
+            existingWatchlist.add(k);
+          }
+          progress.synced++;
+          await aggregateProgress();
+          await logMessage(
+            `[${serviceId}] Добавлено в Watchlist: "${item.title}" -> ${ref.label || ref.id}`,
+            'success'
+          );
+        } catch (err: unknown) {
+          if (isAuthExpiredError(err)) {
+            progress.status = 'failed';
+            progress.error = 'AUTH_EXPIRED';
+            await logMessage(`[${serviceId}] Авторизация истекла при добавлении в Watchlist`, 'error');
+            await aggregateProgress();
+            return;
+          }
+          progress.failed++;
+          await aggregateProgress();
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await logMessage(`[${serviceId}] Ошибка добавления в Watchlist "${item.title}": ${errMsg}`, 'error');
+        }
+      }
+
+      if (isAborted || isSyncAborted) {
+        await logMessage(`[${serviceId}] Синхронизация прервана пользователем.`, 'warn');
+        progress.status = 'skipped';
+        await aggregateProgress();
+        return;
+      }
+
+      await sleep(delayMs);
     }
 
-    if (isAborted) {
-      await logMessage('Перенос в TMDB прерван пользователем.', 'warn');
-      await updateState({ status: 'idle', currentTitle: undefined });
-      return;
-    }
-    await sleep(delayMs);
-  }
+    progress.status = 'completed';
+    await aggregateProgress();
+    await logMessage(
+      `[${serviceId}] Синхронизация завершена. Успешно: ${progress.synced}, пропущено: ${progress.skipped}, ошибок: ${progress.failed}`,
+      'success'
+    );
+  };
+
+  // Run all targets concurrently/independently
+  await Promise.all(enabledTargets.map((t) => runTarget(t)));
 
   await chrome.storage.local.set({ lastScrapedItems: scrapedItems, scrapedItems });
 
+  // Terminal status calculation
+  if (isAborted || isSyncAborted) {
+    await updateState({ status: 'idle', currentTitle: undefined });
+    return;
+  }
+
+  const targetResults = Array.from(targetProgressMap.values());
+  const anyCompleted = targetResults.some((t) => t.status === 'completed');
+  const anyFailed = targetResults.some((t) => t.status === 'failed');
+
+  let finalStatus: 'completed' | 'partial' | 'error' = 'completed';
+  if (anyFailed && anyCompleted) {
+    finalStatus = 'partial';
+  } else if (anyFailed && !anyCompleted) {
+    finalStatus = 'error';
+  } else {
+    finalStatus = 'completed';
+  }
+
   await updateState({
-    status: 'completed',
+    status: finalStatus,
     currentTitle: undefined,
   });
-  await logMessage(`Миграция завершена! Успешно: ${synced}, пропущено (уже есть): ${skipped}, ошибок/не найдено: ${failed}. Доступен экспорт!`, 'success');
+
+  await logMessage(
+    `Все задачи синхронизации завершены со статусом: ${finalStatus}.`,
+    finalStatus === 'completed' ? 'success' : finalStatus === 'partial' ? 'warn' : 'error'
+  );
 }

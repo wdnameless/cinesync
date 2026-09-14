@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kinopoisk to TMDB Migrator",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Автоматический перенос оценок и списка 'Буду смотреть' из Кинопоиска в TMDB",
   "permissions": [
     "storage",
@@ -11,7 +11,12 @@
   ],
   "host_permissions": [
     "*://*.kinopoisk.ru/*",
-    "*://*.themoviedb.org/*"
+    "*://*.themoviedb.org/*",
+    "*://*.trakt.tv/*",
+    "*://*.simkl.com/*",
+    "*://*.letterboxd.com/*",
+    "*://*.imdb.com/*",
+    "*://*.movielens.org/*"
   ],
   "action": {
     "default_popup": "dist/popup.html"

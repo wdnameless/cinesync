@@ -1,13 +1,16 @@
+import type { CsvBundle, MovieItem, ServiceId } from './services/port';
+import type { ServiceCredentials } from './services/credentials';
+
+export type { MovieItem, ServiceId, CsvBundle };
+
 export type MediaCategory = 'ratings' | 'watchlist' | 'both';
 
-export interface KPItem {
+/**
+ * Kinopoisk-scraped item. Extends the canonical `MovieItem` with the fields the
+ * scraper always fills, so the two shapes cannot drift apart.
+ */
+export interface KPItem extends MovieItem {
   id: string; // Kinopoisk ID
-  title: string;
-  originalTitle?: string;
-  imdbId?: string;
-  year?: number;
-  rating?: number; // 1-10 (for ratings)
-  voteDate?: string;
   category: 'ratings' | 'watchlist';
 }
 
@@ -38,7 +41,20 @@ export type MigrationStatus =
   | 'paused_captcha'
   | 'migrating'
   | 'completed'
+  | 'partial'
   | 'error';
+
+export type TargetStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+
+export interface TargetProgress {
+  service: ServiceId;
+  synced: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  status: TargetStatus;
+  error?: string;
+}
 
 export interface MigrationLog {
   timestamp: number;
@@ -69,17 +85,20 @@ export interface MigrationState {
   // Parallel worker statuses
   scrapeWorker?: TaskState;
   syncWorker?: TaskState;
+  targets?: TargetProgress[];
 }
 
 export type RuntimeMessage =
   | { action: 'START_SCANNING'; category: MediaCategory; delayMs?: number; targetUserId?: string }
-  | { action: 'START_MIGRATION'; category: MediaCategory; delayMs?: number }
-  | { action: 'STOP_SCANNING' }
-  | { action: 'STOP_MIGRATION' }
+  | { action: 'START_SYNC'; targets: ServiceId[]; category: MediaCategory; delayMs?: number }
   | { action: 'STOP_PROCESS' }
   | { action: 'PAUSE_MIGRATION' }
   | { action: 'RESUME_MIGRATION' }
   | { action: 'RESET_STATE' }
+  | { action: 'SAVE_SERVICE_CREDENTIALS'; service: ServiceId; credentials: ServiceCredentials }
+  | { action: 'PING_SERVICE'; service: ServiceId }
+  | { action: 'TOGGLE_TARGET'; service: ServiceId; enabled: boolean }
+  | { action: 'EXPORT_SERVICE_CSV'; service: ServiceId }
   | { action: 'TMDB_START_AUTH' }
   | { action: 'TMDB_COMPLETE_AUTH'; requestToken: string }
   | { action: 'SAVE_API_KEY'; apiKey: string }

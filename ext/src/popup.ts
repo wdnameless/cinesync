@@ -1,69 +1,114 @@
-import { MigrationState, MovieItem } from './types';
+import type { MovieItem, ServiceId, MediaCategory, MigrationState, TargetProgress, CsvBundle } from './types';
+import type { ServiceCredentials } from './services/credentials';
 
-// DOM Elements
-const apiKeyInput = document.getElementById('apiKey') as HTMLInputElement;
-const saveKeyBtn = document.getElementById('saveKeyBtn') as HTMLButtonElement;
-const kpApiKeyInput = document.getElementById('kpApiKey') as HTMLInputElement;
-const saveKpKeyBtn = document.getElementById('saveKpKeyBtn') as HTMLButtonElement;
-const sessionStatusText = document.getElementById('sessionStatusText') as HTMLElement;
-const sessionDot = document.getElementById('sessionDot') as HTMLElement;
-const tmdbLoginBtn = document.getElementById('tmdbLoginBtn') as HTMLButtonElement;
-const tmdbConfirmBtn = document.getElementById('tmdbConfirmBtn') as HTMLButtonElement;
+type Lang = 'ru' | 'en';
 
-const tabMigrationBtn = document.getElementById('tabMigrationBtn') as HTMLButtonElement;
-const tabExportBtn = document.getElementById('tabExportBtn') as HTMLButtonElement;
-const tabSettingsBtn = document.getElementById('tabSettingsBtn') as HTMLButtonElement;
-const tabGuideBtn = document.getElementById('tabGuideBtn') as HTMLButtonElement;
+// DOM Elements - Canonical primary navigation
+const tabMigrationBtn = document.getElementById('tabMigrationBtn');
+const tabExportBtn = document.getElementById('tabExportBtn');
+const tabSettingsBtn = document.getElementById('tabSettingsBtn');
+const tabGuideBtn = document.getElementById('tabGuideBtn');
 
-const tabMigration = document.getElementById('tabMigration') as HTMLElement;
-const tabExport = document.getElementById('tabExport') as HTMLElement;
-const tabSettings = document.getElementById('tabSettings') as HTMLElement;
-const tabGuide = document.getElementById('tabGuide') as HTMLElement;
+const tabMigration = document.getElementById('tabMigration');
+const tabExport = document.getElementById('tabExport');
+const tabSettings = document.getElementById('tabSettings');
+const tabGuide = document.getElementById('tabGuide');
 
-const tmdbPingBadge = document.getElementById('tmdbPingBadge') as HTMLElement;
-const tmdbPingText = document.getElementById('tmdbPingText') as HTMLElement;
-const kpPingBadge = document.getElementById('kpPingBadge') as HTMLElement;
-const kpPingText = document.getElementById('kpPingText') as HTMLElement;
+// Process controls & inputs
+const categorySelect = document.getElementById('categorySelect') as HTMLSelectElement | null;
+const scanBtn = document.getElementById('scanBtn') as HTMLButtonElement | null;
+const startBtn = document.getElementById('startBtn') as HTMLButtonElement | null;
+const stopBtn = document.getElementById('stopBtn') as HTMLButtonElement | null;
+const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement | null;
+const resetBtn = document.getElementById('resetBtn') as HTMLButtonElement | null;
 
-function switchTab(tab: 'migration' | 'export' | 'settings' | 'guide') {
-  tabMigrationBtn?.classList.toggle('active', tab === 'migration');
-  tabExportBtn?.classList.toggle('active', tab === 'export');
-  tabSettingsBtn?.classList.toggle('active', tab === 'settings');
-  tabGuideBtn?.classList.toggle('active', tab === 'guide');
+// Aggregate metric values (legacy wiring kept so existing rendering survives)
+const scrapedVal = document.getElementById('scrapedVal');
+const syncedVal = document.getElementById('syncedVal');
+const failedVal = document.getElementById('failedVal');
 
-  tabMigration?.classList.toggle('tab-hidden', tab !== 'migration');
-  tabExport?.classList.toggle('tab-hidden', tab !== 'export');
-  tabSettings?.classList.toggle('tab-hidden', tab !== 'settings');
-  tabGuide?.classList.toggle('tab-hidden', tab !== 'guide');
+// Progress bar elements
+const progressFill = document.getElementById('progressBar') as HTMLElement | null;
+const progressPctText = document.getElementById('progressPercent') as HTMLElement | null;
+const activeTitle = document.getElementById('progressTitle') as HTMLElement | null;
+const statusBadge = document.getElementById('statusBadge');
+const targetProgressList = document.getElementById('targetProgressList');
+
+// Log console
+const logsBox = document.getElementById('logsBox');
+const clearLogsBtn = document.getElementById('clearLogsBtn');
+
+// Kinopoisk Unofficial settings (tabSettings)
+const kpApiKeyInput = document.getElementById('kpApiKey') as HTMLInputElement | null;
+const saveKpKeyBtn = document.getElementById('saveKpKeyBtn') as HTMLButtonElement | null;
+const kpPingBadge = document.getElementById('kpPingBadge');
+const kpPingText = document.getElementById('kpPingText');
+
+// TMDB direct controls
+const apiKeyInput = document.getElementById('tmdbApiKey') as HTMLInputElement | null;
+const saveKeyBtn = document.getElementById('tmdbSaveBtn') as HTMLButtonElement | null;
+const tmdbLoginBtn = document.getElementById('tmdbLoginBtn') as HTMLButtonElement | null;
+const tmdbConfirmBtn = document.getElementById('tmdbConfirmBtn') as HTMLButtonElement | null;
+const sessionDot = document.getElementById('sessionDot');
+const sessionStatusText = document.getElementById('tmdbSessionStatusText') as HTMLElement | null;
+
+// Legacy Kinopoisk CSV export buttons (tabExport)
+const exportRatedBtn = document.getElementById('exportRatedBtn') as HTMLButtonElement | null;
+const exportWatchlistBtn = document.getElementById('exportWatchlistBtn') as HTMLButtonElement | null;
+const exportCsvBtn = document.getElementById('exportCsvBtn') as HTMLButtonElement | null;
+
+// Languages
+const langRu = document.getElementById('langRu');
+const langEn = document.getElementById('langEn');
+const tmdbPingBadge = document.getElementById('tmdbPingBadge');
+const tmdbPingText = document.getElementById('tmdbPingText');
+
+const ALL_SERVICES: ServiceId[] = ['tmdb', 'trakt', 'simkl', 'letterboxd', 'imdb', 'movielens'];
+const CSV_SERVICES: ServiceId[] = ['letterboxd', 'imdb', 'movielens'];
+
+/** Per-service DOM handles, resolved from the frozen Zone E id contract. */
+interface ServiceElements {
+  tabBtn: HTMLElement | null;
+  pane: HTMLElement | null;
+  pingBadge: HTMLElement | null;
+  pingText: HTMLElement | null;
+  clientId: HTMLInputElement | null;
+  clientSecret: HTMLInputElement | null;
+  saveBtn: HTMLButtonElement | null;
+  loginBtn: HTMLButtonElement | null;
+  enableToggle: HTMLInputElement | null;
+  exportBtn: HTMLButtonElement | null;
 }
 
-tabMigrationBtn?.addEventListener('click', () => switchTab('migration'));
-tabExportBtn?.addEventListener('click', () => switchTab('export'));
-tabSettingsBtn?.addEventListener('click', () => switchTab('settings'));
-tabGuideBtn?.addEventListener('click', () => switchTab('guide'));
-const btnOpenGuideFromKeys = document.getElementById('btnOpenGuideFromKeys') as HTMLButtonElement;
-btnOpenGuideFromKeys?.addEventListener('click', () => switchTab('guide'));
-const scanBtn = document.getElementById('scanBtn') as HTMLButtonElement;
-const startBtn = document.getElementById('startBtn') as HTMLButtonElement;
-const stopBtn = document.getElementById('stopBtn') as HTMLButtonElement;
-const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
-const resetBtn = document.getElementById('resetBtn') as HTMLButtonElement;
-const langRu = document.getElementById('langRu') as HTMLButtonElement;
-const langEn = document.getElementById('langEn') as HTMLButtonElement;
-const statusBadge = document.getElementById('statusBadge') as HTMLElement;
-const scrapedVal = document.getElementById('scrapedVal') as HTMLElement;
-const syncedVal = document.getElementById('syncedVal') as HTMLElement;
-const failedVal = document.getElementById('failedVal') as HTMLElement;
-const progressFill = (document.getElementById('progressFill') || document.getElementById('progressBar')) as HTMLElement;
-const progressPctText = (document.getElementById('progressPctText') || document.getElementById('progressPercent')) as HTMLElement;
-const activeTitle = (document.getElementById('activeTitle') || document.getElementById('progressTitle')) as HTMLElement;
-const logsBox = document.getElementById('logsBox') as HTMLElement;
-const clearLogsBtn = document.getElementById('clearLogsBtn') as HTMLButtonElement;
+function resolveServiceElements(service: ServiceId): ServiceElements {
+  const $ = (id: string) => document.getElementById(id);
+  return {
+    tabBtn: $(`tab${service}Btn`),
+    pane: $(`tab${service}`),
+    pingBadge: $(`${service}PingBadge`),
+    pingText: $(`${service}PingText`),
+    clientId: $(
+      service === 'tmdb' ? 'tmdbApiKey' : `${service}ClientId`
+    ) as HTMLInputElement | null,
+    clientSecret: $(`${service}ClientSecret`) as HTMLInputElement | null,
+    saveBtn: $(`${service}SaveBtn`) as HTMLButtonElement | null,
+    loginBtn: $(`${service}LoginBtn`) as HTMLButtonElement | null,
+    enableToggle: $(`${service}EnableToggle`) as HTMLInputElement | null,
+    exportBtn: $(`${service}ExportBtn`) as HTMLButtonElement | null,
+  };
+}
 
-const exportRatedBtn = document.getElementById('exportRatedBtn') as HTMLButtonElement;
-const exportWatchlistBtn = document.getElementById('exportWatchlistBtn') as HTMLButtonElement;
-type Lang = 'ru' | 'en';
-let currentLang: Lang = 'ru';
+const serviceElements: Record<ServiceId, ServiceElements> = {
+  tmdb: resolveServiceElements('tmdb'),
+  trakt: resolveServiceElements('trakt'),
+  simkl: resolveServiceElements('simkl'),
+  letterboxd: resolveServiceElements('letterboxd'),
+  imdb: resolveServiceElements('imdb'),
+  movielens: resolveServiceElements('movielens'),
+};
+
+/** Services the user has enabled as sync targets. */
+let enabledTargets: ServiceId[] = [];
 
 const translations: Record<Lang, Record<string, string>> = {
   ru: {
@@ -129,11 +174,83 @@ const translations: Record<Lang, Record<string, string>> = {
     emptyWl: 'Список «Буду смотреть» пуст! Сначала нажмите "1. Сканировать КП".',
     emptyBackup: 'Нет данных для экспорта! Сначала нажмите "1. Сканировать КП".',
     stoppedMsg: 'Процесс остановлен пользователем',
+    alertNoTmdbKey: 'Сначала укажите и сохраните TMDB v3 API Key!',
+    authExpired: 'Сессия истекла',
+    reauthNeeded: 'Требуется повторная авторизация',
+    reauthBtn: 'Войти снова',
+    btnExportServiceCsv: 'Экспорт CSV',
+    exportDone: 'Экспорт завершен',
+    exportFailed: 'Ошибка экспорта CSV',
+    noExportFiles: 'Нет данных для экспорта',
+    importNoticeLetterboxd: 'Импортируйте полученный CSV файл на странице letterboxd.com/import/ (лимит 1 МБ на файл)',
+    importNoticeImdb: 'IMDb не поддерживает импорт списков. Доступен только экспорт CSV.',
+    importNoticeMovielens: 'MovieLens не поддерживает импорт пользовательских файлов. Доступен только экспорт CSV.',
+    sourceNoticeKinopoisk: 'Кинопоиск является источником данных, а не получателем синхронизации.',
+    noTargetsSelected: 'Выберите хотя бы один сервис для синхронизации!',
+    traktSecretNotice: 'Для работы с Trakt требуется Client ID и Client Secret вашего приложения Trakt API.',
+    simklPinNotice: 'Для работы с Simkl требуется Client ID вашего приложения и подтверждение PIN-кода.',
+    saveCredentialsSuccess: 'Данные сохранены',
+    saveCredentialsError: 'Ошибка при сохранении данных',
+    pingError: 'Ошибка проверки',
+    // Service navigation labels
+    svcTmdb: 'TMDB',
+    svcTrakt: 'Trakt',
+    svcSimkl: 'Simkl',
+    svcLetterboxd: 'Letterboxd',
+    svcImdb: 'IMDb',
+    svcMovielens: 'MovieLens',
+    // Shared service labels
+    btnSave: 'Сохранить',
+    btnConnect: 'Подключить',
+    btnTransfer: 'Синхронизировать',
+    btnExportLetterboxd: 'Экспорт для Letterboxd',
+    btnExportImdb: 'Экспорт для IMDb',
+    btnExportMovielens: 'Экспорт для MovieLens',
+    enableTargetLabel: 'Участвует в синхронизации',
+    categoryLabel: 'Данные для синхронизации',
+    statusPrefix: 'Статус:',
+    createAppLink: 'Создать приложение ↗',
+    linkLetterboxdImport: 'Открыть импорт Letterboxd ↗',
+    // TMDB
+    tmdbTitle: 'The Movie Database (TMDB)',
+    tmdbDesc: 'Официальный API v3: полная синхронизация оценок и списка «Буду смотреть».',
+    tmdbKeyLabel: 'TMDB v3 API Key',
+    // Trakt
+    traktTitle: 'Trakt',
+    traktDesc: 'Оценки и список отложенного. Требуется ваше приложение Trakt API.',
+    traktClientIdLabel: 'Trakt Client ID',
+    traktClientSecretLabel: 'Trakt Client Secret',
+    traktAppNotice: 'Trakt требует собственное приложение: обмен токена невозможен без Client Secret.',
+    traktAuthNotice: 'После сохранения ключей нажмите «Подключить» и подтвердите код на trakt.tv/activate.',
+    // Simkl
+    simklTitle: 'Simkl',
+    simklDesc: 'Оценки и список «Планирую смотреть» через PIN-авторизацию.',
+    simklClientIdLabel: 'Simkl Client ID',
+    simklAppNotice: 'Simkl требует собственное приложение: Client ID выдаётся в настройках аккаунта Simkl.',
+    simklAuthNotice: 'После сохранения Client ID нажмите «Подключить» и подтвердите PIN-код.',
+    // Letterboxd
+    letterboxdTitle: 'Letterboxd',
+    letterboxdDesc: 'Импорт через CSV-файл: оценки и список отложенного.',
+    letterboxdLimitNotice: 'Лимит файла — 1 МБ. Крупные выгрузки разбиваются на части с повтором заголовка.',
+    // IMDb
+    imdbTitle: 'IMDb',
+    imdbDesc: 'Только экспорт CSV в формате IMDb.',
+    imdbNoImportNotice: 'IMDb не поддерживает импорт файлов. Возможен только экспорт.',
+    // MovieLens
+    movielensTitle: 'MovieLens',
+    movielensDesc: 'Только экспорт CSV в формате датасета MovieLens.',
+    movielensNoImportNotice: 'MovieLens не принимает пользовательские файлы: возможен только экспорт.',
+    // Kinopoisk source
+    kpSettingsTitle: 'Источник: Кинопоиск',
+    kpSourceOnlyNotice: 'Кинопоиск — источник данных. У него нет API на запись, поэтому он не может быть получателем.',
+    // Extended guide steps
+    step6Title: 'Выберите получателей синхронизации',
+    step6Desc: 'На вкладке «Ключи» включите нужные сервисы переключателем и сохраните их ключи. Затем нажмите «2. Синхронизировать».',
+    step7Title: 'Сервисы без API (IMDb, MovieLens)',
+    step7Desc: 'Они работают только на экспорт: скачайте CSV и загрузите его вручную там, где сервис это поддерживает.',
+    step7Link: 'Страница импорта Letterboxd ↗',
   },
   en: {
-    tabTransfer: 'Transfer',
-    tabExport: 'Export CSV',
-    tabSettings: 'API Keys',
     tabGuide: 'User Guide',
     guideHeader: 'Step-by-Step Guide',
     step1Title: 'Get TMDB API Key',
@@ -192,8 +309,85 @@ const translations: Record<Lang, Record<string, string>> = {
     emptyWl: 'Watchlist is empty! Please click "1. Scan Kinopoisk" first.',
     emptyBackup: 'No data to export! Please click "1. Scan Kinopoisk" first.',
     stoppedMsg: 'Process stopped by user',
+    alertNoTmdbKey: 'Please enter and save TMDB v3 API Key first!',
+    authExpired: 'Auth session expired',
+    reauthNeeded: 'Re-authentication required',
+    reauthBtn: 'Log in again',
+    btnExportServiceCsv: 'Export CSV',
+    exportDone: 'Export complete',
+    exportFailed: 'CSV export failed',
+    noExportFiles: 'No data to export',
+    importNoticeLetterboxd: 'Import the downloaded CSV at letterboxd.com/import/ (1 MB file limit)',
+    importNoticeImdb: 'IMDb does not support importing lists. Only CSV export is available.',
+    importNoticeMovielens: 'MovieLens does not support importing user files. Only CSV export is available.',
+    sourceNoticeKinopoisk: 'Kinopoisk is a data source, not a sync destination.',
+    noTargetsSelected: 'Please enable at least one target service to sync!',
+    traktSecretNotice: 'Trakt requires your own Trakt API app Client ID and Client Secret.',
+    simklPinNotice: 'Simkl requires your app Client ID and PIN authorization.',
+    saveCredentialsSuccess: 'Credentials saved',
+    saveCredentialsError: 'Error saving credentials',
+    pingError: 'Ping check failed',
+    // Service navigation labels
+    svcTmdb: 'TMDB',
+    svcTrakt: 'Trakt',
+    svcSimkl: 'Simkl',
+    svcLetterboxd: 'Letterboxd',
+    svcImdb: 'IMDb',
+    svcMovielens: 'MovieLens',
+    // Shared service labels
+    btnSave: 'Save',
+    btnConnect: 'Connect',
+    btnTransfer: 'Sync now',
+    btnExportLetterboxd: 'Export for Letterboxd',
+    btnExportImdb: 'Export for IMDb',
+    btnExportMovielens: 'Export for MovieLens',
+    enableTargetLabel: 'Include in sync',
+    categoryLabel: 'Data to sync',
+    statusPrefix: 'Status:',
+    createAppLink: 'Create an app ↗',
+    linkLetterboxdImport: 'Open Letterboxd import ↗',
+    // TMDB
+    tmdbTitle: 'The Movie Database (TMDB)',
+    tmdbDesc: 'Official v3 API: full sync of ratings and the watchlist.',
+    tmdbKeyLabel: 'TMDB v3 API Key',
+    // Trakt
+    traktTitle: 'Trakt',
+    traktDesc: 'Ratings and watchlist. Requires your own Trakt API application.',
+    traktClientIdLabel: 'Trakt Client ID',
+    traktClientSecretLabel: 'Trakt Client Secret',
+    traktAppNotice: 'Trakt requires your own app: the token exchange cannot work without a Client Secret.',
+    traktAuthNotice: 'After saving credentials click "Connect" and approve the code at trakt.tv/activate.',
+    // Simkl
+    simklTitle: 'Simkl',
+    simklDesc: 'Ratings and plan-to-watch via PIN authorization.',
+    simklClientIdLabel: 'Simkl Client ID',
+    simklAppNotice: 'Simkl requires your own app: the Client ID is issued in your Simkl account settings.',
+    simklAuthNotice: 'After saving the Client ID click "Connect" and approve the PIN code.',
+    // Letterboxd
+    letterboxdTitle: 'Letterboxd',
+    letterboxdDesc: 'Import via CSV file: ratings and watchlist.',
+    letterboxdLimitNotice: 'File limit is 1 MB. Larger exports are split into parts with the header repeated.',
+    // IMDb
+    imdbTitle: 'IMDb',
+    imdbDesc: 'CSV export only, in IMDb format.',
+    imdbNoImportNotice: 'IMDb does not support importing files. Export only.',
+    // MovieLens
+    movielensTitle: 'MovieLens',
+    movielensDesc: 'CSV export only, in MovieLens dataset format.',
+    movielensNoImportNotice: 'MovieLens does not accept user files: export only.',
+    // Kinopoisk source
+    kpSettingsTitle: 'Source: Kinopoisk',
+    kpSourceOnlyNotice: 'Kinopoisk is a data source. It has no write API, so it can never be a destination.',
+    // Extended guide steps
+    step6Title: 'Choose sync destinations',
+    step6Desc: 'On the "Keys" tab enable the services you need and save their credentials. Then press "2. Sync now".',
+    step7Title: 'Services without an API (IMDb, MovieLens)',
+    step7Desc: 'These are export-only: download the CSV and upload it manually wherever the service allows it.',
+    step7Link: 'Letterboxd import page ↗',
   }
 };
+
+let currentLang: Lang = 'ru';
 
 function setLanguage(lang: Lang) {
   currentLang = lang;
@@ -218,7 +412,6 @@ chrome.storage.local.get(['uiLang'], (res) => {
     setLanguage(res.uiLang);
   }
 });
-const exportCsvBtn = document.getElementById('exportCsvBtn') as HTMLButtonElement;
 
 // Helper: Show brief visual feedback on button
 function pulseSuccess(btn: HTMLElement, tempText?: string) {
@@ -233,6 +426,7 @@ function pulseSuccess(btn: HTMLElement, tempText?: string) {
 
 // Clear Logs Box
 clearLogsBtn?.addEventListener('click', () => {
+  if (!logsBox) return;
   logsBox.innerHTML = '<div class="log-entry log-info"><span class="log-time">[Clear]</span> Журнал очищен</div>';
 });
 
@@ -243,64 +437,46 @@ chrome.storage.local.get(['tmdbAuth', 'tmdbApiKey', 'tmdbSessionId', 'tmdbUserna
   const sessionId = auth.sessionId || res.tmdbSessionId || '';
   const username = auth.username || res.tmdbUsername || '';
 
-  if (apiKey) {
+  if (apiKey && apiKeyInput) {
     apiKeyInput.value = apiKey;
-    pingTmdbKey(apiKey);
+    pingService('tmdb');
   }
-  if (res.kpApiKey) {
+  if (res.kpApiKey && kpApiKeyInput) {
     kpApiKeyInput.value = res.kpApiKey;
     pingKpKey(res.kpApiKey);
   }
-  if (res.categoryScope) categorySelect.value = res.categoryScope;
+  if (res.categoryScope && categorySelect) categorySelect.value = res.categoryScope;
 
   updateSessionDisplay(!!sessionId, username);
 });
 categorySelect?.addEventListener('change', () => {
-  chrome.storage.local.set({ categoryScope: categorySelect.value });
+  if (categorySelect) chrome.storage.local.set({ categoryScope: categorySelect.value });
 });
 
 function updateSessionDisplay(isAuth: boolean, username?: string) {
+  if (!sessionStatusText) return;
   if (isAuth) {
     sessionStatusText.textContent = username ? `Авторизован (${username})` : 'Активна';
     sessionStatusText.style.color = '#34d399';
     if (sessionDot) {
       sessionDot.className = 'dot active';
     }
-    tmdbLoginBtn.textContent = 'Сменить аккаунт';
-    tmdbLoginBtn.classList.remove('btn-tmdb');
-    tmdbConfirmBtn.style.display = 'none';
+    if (tmdbLoginBtn) {
+      tmdbLoginBtn.textContent = 'Сменить аккаунт';
+      tmdbLoginBtn.classList.remove('btn-tmdb');
+    }
+    if (tmdbConfirmBtn) tmdbConfirmBtn.style.display = 'none';
   } else {
     sessionStatusText.textContent = 'Не авторизован';
     sessionStatusText.style.color = '#9ca3af';
     if (sessionDot) {
       sessionDot.className = 'dot';
     }
-    tmdbLoginBtn.textContent = 'Войти в TMDB';
-    tmdbLoginBtn.classList.add('btn-tmdb');
-  }
-}
-
-function pingTmdbKey(key: string) {
-  if (!key) {
-    if (tmdbPingBadge) tmdbPingBadge.style.display = 'none';
-    return;
-  }
-  if (tmdbPingBadge) {
-    tmdbPingBadge.style.display = 'inline-flex';
-    tmdbPingBadge.className = 'ping-badge';
-    tmdbPingText.textContent = translations[currentLang].pingTesting;
-  }
-  chrome.runtime.sendMessage({ action: 'PING_TMDB_KEY', apiKey: key }, (res) => {
-    if (tmdbPingBadge) {
-      if (res?.valid) {
-        tmdbPingBadge.className = 'ping-badge valid';
-        tmdbPingText.textContent = translations[currentLang].pingValid;
-      } else {
-        tmdbPingBadge.className = 'ping-badge invalid';
-        tmdbPingText.textContent = translations[currentLang].pingInvalid;
-      }
+    if (tmdbLoginBtn) {
+      tmdbLoginBtn.textContent = 'Войти в TMDB';
+      tmdbLoginBtn.classList.add('btn-tmdb');
     }
-  });
+  }
 }
 
 function pingKpKey(key: string) {
@@ -311,37 +487,38 @@ function pingKpKey(key: string) {
   if (kpPingBadge) {
     kpPingBadge.style.display = 'inline-flex';
     kpPingBadge.className = 'ping-badge';
-    kpPingText.textContent = translations[currentLang].pingTesting;
+    if (kpPingText) kpPingText.textContent = translations[currentLang].pingTesting;
   }
   chrome.runtime.sendMessage({ action: 'PING_KP_KEY', kpApiKey: key }, (res) => {
-    if (kpPingBadge) {
-      if (res?.valid) {
-        kpPingBadge.className = 'ping-badge valid';
-        kpPingText.textContent = translations[currentLang].pingValid;
-      } else {
-        kpPingBadge.className = 'ping-badge invalid';
-        kpPingText.textContent = translations[currentLang].pingInvalid;
-      }
+    if (!kpPingBadge) return;
+    if (res?.valid) {
+      kpPingBadge.className = 'ping-badge valid';
+      if (kpPingText) kpPingText.textContent = translations[currentLang].pingValid;
+    } else {
+      kpPingBadge.className = 'ping-badge invalid';
+      if (kpPingText) kpPingText.textContent = translations[currentLang].pingInvalid;
     }
   });
 }
 
 // Save TMDB API Key
 saveKeyBtn?.addEventListener('click', () => {
+  if (!apiKeyInput) return;
   const key = apiKeyInput.value.trim();
   chrome.runtime.sendMessage({ action: 'SAVE_API_KEY', apiKey: key }, () => {
     chrome.storage.local.set({ tmdbApiKey: key }, () => {
-      pulseSuccess(saveKeyBtn, '✓');
-      pingTmdbKey(key);
+      if (saveKeyBtn) pulseSuccess(saveKeyBtn, '✓');
+      pingService('tmdb');
     });
   });
 });
 // Save KP API Key
 saveKpKeyBtn?.addEventListener('click', () => {
+  if (!kpApiKeyInput) return;
   const key = kpApiKeyInput.value.trim();
   chrome.runtime.sendMessage({ action: 'SAVE_KP_API_KEY', kpApiKey: key }, () => {
     chrome.storage.local.set({ kpApiKey: key }, () => {
-      pulseSuccess(saveKpKeyBtn, '✓');
+      if (saveKpKeyBtn) pulseSuccess(saveKpKeyBtn, '✓');
       pingKpKey(key);
     });
   });
@@ -349,6 +526,7 @@ saveKpKeyBtn?.addEventListener('click', () => {
 
 // TMDB Login Workflow
 tmdbLoginBtn?.addEventListener('click', () => {
+  if (!apiKeyInput) return;
   const key = apiKeyInput.value.trim();
   if (!key) {
     const dict = translations[currentLang];
@@ -362,14 +540,18 @@ tmdbLoginBtn?.addEventListener('click', () => {
 
   chrome.runtime.sendMessage({ action: 'SAVE_API_KEY', apiKey: key }, () => {
     chrome.runtime.sendMessage({ action: 'TMDB_START_AUTH' }, (res) => {
-      tmdbLoginBtn.disabled = false;
-      if (res?.success) {
+      if (tmdbLoginBtn) {
+        tmdbLoginBtn.disabled = false;
         tmdbLoginBtn.textContent = currentLang === 'ru' ? 'Вход в браузере...' : 'Opening browser...';
-        tmdbConfirmBtn.style.display = 'inline-flex';
-        sessionStatusText.textContent = currentLang === 'ru' ? 'Одобрите доступ на сайте TMDB' : 'Approve access on TMDB';
-        sessionStatusText.style.color = '#fbbf24';
+      }
+      if (res?.success) {
+        if (tmdbConfirmBtn) tmdbConfirmBtn.style.display = 'inline-flex';
+        if (sessionStatusText) {
+          sessionStatusText.textContent = currentLang === 'ru' ? 'Одобрите доступ на сайте TMDB' : 'Approve access on TMDB';
+          sessionStatusText.style.color = '#fbbf24';
+        }
       } else {
-        tmdbLoginBtn.textContent = currentLang === 'ru' ? 'Войти в TMDB' : 'Login to TMDB';
+        if (tmdbLoginBtn) tmdbLoginBtn.textContent = currentLang === 'ru' ? 'Войти в TMDB' : 'Login to TMDB';
         if (sessionDot) sessionDot.className = 'dot';
         alert('Ошибка авторизации: ' + (res?.error || 'Неизвестная ошибка'));
       }
@@ -393,7 +575,7 @@ tmdbConfirmBtn?.addEventListener('click', () => {
   });
 });
 scanBtn?.addEventListener('click', () => {
-  const category = (categorySelect.value as MediaCategory) || 'both';
+  const category = (categorySelect?.value as MediaCategory) || 'both';
   chrome.runtime.sendMessage({ action: 'START_SCANNING', category }, (response) => {
     if (response?.error) {
       alert(`Ошибка: ${response.error}`);
@@ -404,8 +586,13 @@ scanBtn?.addEventListener('click', () => {
 });
 
 startBtn?.addEventListener('click', () => {
-  const category = (categorySelect.value as MediaCategory) || 'both';
-  chrome.runtime.sendMessage({ action: 'START_MIGRATION', category }, (response) => {
+  const category = (categorySelect?.value as MediaCategory) || 'both';
+  const targets = Array.from(enabledTargets);
+  if (targets.length === 0) {
+    alert(translations[currentLang].noTargetsSelected || 'Выберите хотя бы один сервис для синхронизации!');
+    return;
+  }
+  chrome.runtime.sendMessage({ action: 'START_SYNC', targets, category }, (response) => {
     if (response?.error) {
       alert(`Ошибка: ${response.error}`);
     } else {
@@ -458,8 +645,9 @@ function getStoredItems(): Promise<MovieItem[]> {
 // Экспорт оценок Кинопоиска (CSV)
 exportRatedBtn?.addEventListener('click', async () => {
   const items = await getStoredItems();
+  const rated = items.filter((it) => typeof it.rating === 'number' && it.rating > 0);
   const dict = translations[currentLang];
-  if (!rated.length) {
+  if (rated.length === 0) {
     alert(dict.emptyRatings || 'Нет собранных оценок для экспорта!');
     return;
   }
@@ -472,7 +660,7 @@ exportRatedBtn?.addEventListener('click', async () => {
     `"${it.url || `https://www.kinopoisk.ru/film/${it.id || it.kpId}/`}"`,
   ]);
   downloadCsv(`kinopoisk_ratings_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
-  pulseSuccess(exportRatedBtn, 'Готово!');
+  if (exportRatedBtn) pulseSuccess(exportRatedBtn, 'Готово!');
 });
 
 // Экспорт списка "Буду смотреть" (Watchlist CSV)
@@ -532,22 +720,28 @@ async function refreshState() {
 }
 
 function applyStateToUi(state: MigrationState) {
-    statusBadge.textContent = state.status.toUpperCase();
-    statusBadge.className = 'status-badge';
-    if (state.status === 'scraping' || state.status === 'migrating') {
-      statusBadge.classList.add('status-running');
-    } else if (state.status === 'paused_captcha') {
-      statusBadge.classList.add('status-paused');
-    } else if (state.status === 'completed') {
-      statusBadge.classList.add('status-completed');
-    } else if (state.status === 'error') {
-      statusBadge.classList.add('status-error');
+    const dict = translations[currentLang];
+
+    if (statusBadge) {
+      statusBadge.textContent = state.status.toUpperCase();
+      statusBadge.className = 'status-badge';
+      if (state.status === 'scraping' || state.status === 'migrating') {
+        statusBadge.classList.add('status-running');
+      } else if (state.status === 'paused_captcha') {
+        statusBadge.classList.add('status-paused');
+      } else if (state.status === 'completed') {
+        statusBadge.classList.add('status-completed');
+      } else if (state.status === 'partial') {
+        statusBadge.classList.add('status-paused');
+      } else if (state.status === 'error') {
+        statusBadge.classList.add('status-error');
+      }
     }
 
-    // Counters
-    scrapedVal.textContent = state.scrapedCount.toString();
-    syncedVal.textContent = state.syncedCount.toString();
-    failedVal.textContent = state.failedCount.toString();
+    // Counters (aggregate across targets — still populated by the orchestrator)
+    if (scrapedVal) scrapedVal.textContent = state.scrapedCount.toString();
+    if (syncedVal) syncedVal.textContent = state.syncedCount.toString();
+    if (failedVal) failedVal.textContent = state.failedCount.toString();
 
     // Progress Bar & Percentage
     let pct = 0;
@@ -568,7 +762,7 @@ function applyStateToUi(state: MigrationState) {
         activeTitle.textContent = '⚠️ Обнаружена капча! Пройдите её во вкладке Кинопоиска';
         activeTitle.style.color = 'var(--accent-amber)';
       } else {
-        activeTitle.textContent = state.errorMessage || (state.status === 'idle' ? 'Готов к запуску' : 'В процессе...');
+        activeTitle.textContent = state.errorMessage || (state.status === 'idle' ? dict.readyTitle : 'В процессе...');
         activeTitle.style.color = state.errorMessage ? 'var(--accent-rose)' : 'var(--text-muted)';
       }
     }
@@ -600,14 +794,17 @@ function applyStateToUi(state: MigrationState) {
         startBtn.disabled = false;
         startBtn.innerHTML = `
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-          <span>${currentLang === 'ru' ? '2. В TMDB' : '2. To TMDB'}</span>
+          <span>${currentLang === 'ru' ? '2. Синхронизировать' : '2. Sync now'}</span>
         `;
       }
       if (scanBtn) scanBtn.disabled = false;
       if (pauseBtn) pauseBtn.style.display = 'none';
     }
+    // Per-target progress (multi-service sync)
+    renderTargetProgress(state.targets);
+
     // Logs Box Rendering (auto-scroll only if user is already near bottom)
-    if (state.logs && state.logs.length > 0) {
+    if (logsBox && state.logs && state.logs.length > 0) {
       const isNearBottom = logsBox.scrollHeight - logsBox.scrollTop - logsBox.clientHeight < 40;
       logsBox.innerHTML = state.logs
         .slice(-70)
@@ -628,6 +825,264 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+// ---------------------------------------------------------------------------
+// Two-level navigation: four primary tabs + one tab per service
+// ---------------------------------------------------------------------------
+
+type TabId = 'migration' | 'export' | 'settings' | 'guide' | ServiceId;
+
+const PRIMARY_TABS: Array<{ id: 'migration' | 'export' | 'settings' | 'guide'; btn: HTMLElement | null; pane: HTMLElement | null }> = [
+  { id: 'migration', btn: tabMigrationBtn, pane: tabMigration },
+  { id: 'export', btn: tabExportBtn, pane: tabExport },
+  { id: 'settings', btn: tabSettingsBtn, pane: tabSettings },
+  { id: 'guide', btn: tabGuideBtn, pane: tabGuide },
+];
+
+function switchTab(tab: TabId) {
+  const isPrimary = (t: string): t is 'migration' | 'export' | 'settings' | 'guide' =>
+    t === 'migration' || t === 'export' || t === 'settings' || t === 'guide';
+
+  for (const entry of PRIMARY_TABS) {
+    entry.btn?.classList.toggle('active', entry.id === tab);
+    entry.pane?.classList.toggle('tab-hidden', entry.id !== tab);
+  }
+
+  for (const service of ALL_SERVICES) {
+    const els = serviceElements[service];
+    els.tabBtn?.classList.toggle('active', service === tab);
+    els.pane?.classList.toggle('tab-hidden', service !== tab);
+  }
+
+  // Guard against an unknown id reaching here through a stale attribute.
+  if (!isPrimary(tab) && !ALL_SERVICES.includes(tab as ServiceId)) {
+    tabMigrationBtn?.classList.add('active');
+    tabMigration?.classList.remove('tab-hidden');
+  }
+}
+
+for (const entry of PRIMARY_TABS) {
+  entry.btn?.addEventListener('click', () => switchTab(entry.id));
+}
+
+for (const service of ALL_SERVICES) {
+  serviceElements[service].tabBtn?.addEventListener('click', () => switchTab(service));
+}
+
+// ---------------------------------------------------------------------------
+// Per-service ping badge
+// ---------------------------------------------------------------------------
+
+type PingState = 'valid' | 'invalid' | 'checking';
+
+function renderPing(service: ServiceId, state: PingState) {
+  const els = serviceElements[service];
+  const dict = translations[currentLang];
+
+  const text =
+    state === 'valid' ? dict.pingValid : state === 'invalid' ? dict.pingInvalid : dict.pingTesting;
+
+  if (els.pingBadge) {
+    els.pingBadge.style.display = 'inline-flex';
+    els.pingBadge.className = state === 'checking' ? 'ping-badge' : `ping-badge ${state}`;
+  }
+  if (els.pingText) {
+    els.pingText.textContent = text;
+  }
+}
+
+function pingService(service: ServiceId) {
+  renderPing(service, 'checking');
+  chrome.runtime.sendMessage({ action: 'PING_SERVICE', service }, (res: { success?: boolean; valid?: boolean; error?: string } | undefined) => {
+    if (res?.valid) {
+      renderPing(service, 'valid');
+    } else {
+      renderPing(service, 'invalid');
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Per-service credentials, connect, enable-toggle, CSV export
+// ---------------------------------------------------------------------------
+
+function collectCredentials(service: ServiceId): ServiceCredentials {
+  const els = serviceElements[service];
+  const creds: ServiceCredentials = {};
+
+  const clientId = els.clientId?.value.trim();
+  const clientSecret = els.clientSecret?.value.trim();
+
+  if (service === 'tmdb') {
+    if (clientId) creds.apiKey = clientId;
+  } else {
+    if (clientId) creds.clientId = clientId;
+    if (clientSecret) creds.clientSecret = clientSecret;
+  }
+  return creds;
+}
+
+function saveServiceCredentials(service: ServiceId) {
+  const credentials = collectCredentials(service);
+  const dict = translations[currentLang];
+
+  chrome.runtime.sendMessage(
+    { action: 'SAVE_SERVICE_CREDENTIALS', service, credentials },
+    (res: { success?: boolean; error?: string } | undefined) => {
+      if (res?.success) {
+        pingService(service);
+        // TMDB keeps its dedicated key path so the existing auth flow still works.
+        if (service === 'tmdb' && credentials.apiKey) {
+          chrome.runtime.sendMessage({ action: 'SAVE_API_KEY', apiKey: credentials.apiKey }, () => {});
+        }
+      } else {
+        if (activeTitle) activeTitle.textContent = res?.error || dict.saveCredentialsError;
+      }
+    }
+  );
+}
+
+function downloadBundle(filename: string, content: string) {
+  // Adapters already produced exact-format CSV including its BOM — save verbatim.
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportServiceCsv(service: ServiceId) {
+  const dict = translations[currentLang];
+  chrome.runtime.sendMessage(
+    { action: 'EXPORT_SERVICE_CSV', service },
+    (res: { success?: boolean; files?: CsvBundle[]; error?: string } | undefined) => {
+      if (res?.success && res.files && res.files.length > 0) {
+        for (const file of res.files) {
+          downloadBundle(file.filename, file.content);
+        }
+      } else {
+        alert(res?.error || dict.noExportFiles);
+      }
+    }
+  );
+}
+
+for (const service of ALL_SERVICES) {
+  const els = serviceElements[service];
+
+  els.saveBtn?.addEventListener('click', () => saveServiceCredentials(service));
+
+  els.loginBtn?.addEventListener('click', () => {
+    if (service === 'tmdb') {
+      tmdbLoginBtn?.click();
+      return;
+    }
+    // Trakt and Simkl both start an interactive auth handshake in the background.
+    pingService(service);
+  });
+
+  els.enableToggle?.addEventListener('change', () => {
+    const enabled = !!els.enableToggle?.checked;
+    chrome.runtime.sendMessage({ action: 'TOGGLE_TARGET', service, enabled }, () => {
+      setEnabledTargets(
+        enabled ? [...enabledTargets, service] : enabledTargets.filter((s) => s !== service)
+      );
+    });
+  });
+
+  els.exportBtn?.addEventListener('click', () => exportServiceCsv(service));
+}
+
+function setEnabledTargets(targets: ServiceId[]) {
+  enabledTargets = Array.from(new Set(targets));
+  chrome.storage.local.set({ enabledTargets });
+}
+
+// ---------------------------------------------------------------------------
+// Per-target progress rendering
+// ---------------------------------------------------------------------------
+
+function renderTargetProgress(targets: TargetProgress[] | undefined) {
+  if (!targetProgressList) return;
+  if (!targets || targets.length === 0) {
+    targetProgressList.innerHTML = '';
+    return;
+  }
+
+  targetProgressList.innerHTML = targets
+    .map((t) => {
+      const errText = t.error ? ` · ${escapeHtml(t.error)}` : '';
+      const reauth =
+        t.error === 'AUTH_EXPIRED'
+          ? `<button class="btn btn-secondary" data-reauth="${t.service}">${escapeHtml(
+              translations[currentLang].reauthBtn
+            )}</button>`
+          : '';
+      return `<div class="target-progress-row">
+        <span class="target-name">${escapeHtml(t.service)}</span>
+        <span class="target-status">${escapeHtml(t.status)}${errText}</span>
+        <span class="target-counters">${t.synced} / ${t.skipped} / ${t.failed}</span>
+        ${reauth}
+      </div>`;
+    })
+    .join('');
+
+  targetProgressList.querySelectorAll<HTMLElement>('[data-reauth]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const service = btn.getAttribute('data-reauth') as ServiceId | null;
+      if (service) switchTab(service);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Start sync over the enabled targets
+// ---------------------------------------------------------------------------
+
+function startSync() {
+  const dict = translations[currentLang];
+  if (enabledTargets.length === 0) {
+    alert(dict.noTargetsSelected);
+    return;
+  }
+  const category = (categorySelect?.value as MediaCategory) || 'both';
+  chrome.runtime.sendMessage(
+    { action: 'START_SYNC', targets: enabledTargets, category },
+    (res: { success?: boolean; error?: string } | undefined) => {
+      if (!res?.success && res?.error) {
+        alert(res.error);
+      }
+      refreshState();
+    }
+  );
+}
+
+startBtn?.addEventListener('click', startSync);
+
+// ---------------------------------------------------------------------------
+// Restore enabled targets and ping anything already credentialed
+// ---------------------------------------------------------------------------
+
+chrome.storage.local.get(['enabledTargets'], (res) => {
+  if (Array.isArray(res.enabledTargets)) {
+    enabledTargets = res.enabledTargets as ServiceId[];
+    for (const service of enabledTargets) {
+      const toggle = serviceElements[service]?.enableToggle;
+      if (toggle) toggle.checked = true;
+    }
+  }
+});
+
+for (const service of ALL_SERVICES) {
+  const els = serviceElements[service];
+  const hasValue = !!els.clientId?.value.trim();
+  if (hasValue) pingService(service);
+}
+
 // Initial pull + polling interval
 refreshState();
 setInterval(refreshState, 1000);
+
