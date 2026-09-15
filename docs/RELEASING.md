@@ -148,3 +148,21 @@ empty storage and orphan the user's existing data).
   the version — another reason the version must move on every release.
 - **A published version cannot be replaced.** The store rejects a re-upload of
   the same version. Fixing a bad release means publishing a higher version.
+
+## Status of this project as of v3.1.0
+
+- **GitHub Release: published.** `v3.1.0` carries `kinopoisk-sync-3.1.0.zip`
+  plus an unpacked build. The `Release` workflow is tag-triggered and green.
+- **Chrome Web Store: not published.** No developer account or API credentials
+  are configured for this repository, which is a prerequisite rather than an
+  oversight. Until it is listed, users install by loading the unpacked build;
+  that path has no automatic updates (see below).
+
+### Installing without the store
+
+Unpacked installs are the supported path meanwhile. Note the consequence: an
+unpacked extension does **not** update itself. Chrome has no update URL for it,
+so the user must replace the files and press **Reload** on
+`chrome://extensions` for each new version — and because of the service-worker
+cache described above, that reload is required even when the files on disk have
+already changed.
