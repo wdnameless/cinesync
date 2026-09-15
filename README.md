@@ -94,6 +94,13 @@ python tui.py
 
 ---
 
+## 📚 Документация проекта
+
+- [`docs/RELEASING.md`](docs/RELEASING.md) — как выпускать релизы, как работают обновления расширения
+- [`docs/CHROME_WEB_STORE_ACCOUNTS.md`](docs/CHROME_WEB_STORE_ACCOUNTS.md) — аккаунты Chrome Web Store и публикация нескольких расширений
+- [`docs/PRIVACY.md`](docs/PRIVACY.md) — ответы для формы Privacy в сторе
+- [`CHANGELOG.md`](CHANGELOG.md) — история версий
+
 ## 🔒 Безопасность и конфиденциальность
 - Все API-ключи, токены сессий и экспортированные данные хранятся **исключительно локально** на вашем компьютере (`chrome.storage.local` или локальный `.env`).
 - Никакие пароли или токены не передаются сторонним серверам.
