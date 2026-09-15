@@ -9,8 +9,15 @@ function checkCaptchaInternal(): boolean {
     window.location.href.includes('showcaptcha') ||
     document.querySelector('.CheckboxCaptcha') !== null ||
     document.querySelector('#captcha-container') !== null ||
+    // Modern Yandex SmartCaptcha renders as an iframe; the legacy class names
+    // above are still shipped by Kinopoisk's server-rendered pages but are not
+    // what the challenge actually uses today.
+    document.querySelector('iframe[src*="captcha"]') !== null ||
+    document.querySelector('[class*="SmartCaptcha"]') !== null ||
+    document.querySelector('[data-testid*="captcha"]') !== null ||
     document.title.toLowerCase().includes('капча') ||
-    document.title.toLowerCase().includes('робот')
+    document.title.toLowerCase().includes('робот') ||
+    document.title.toLowerCase().includes('antirobot')
   );
 }
 
@@ -73,8 +80,12 @@ export function parseKinopoiskPage(category: 'ratings' | 'watchlist'): {
     window.location.href.includes('showcaptcha') ||
     document.querySelector('.CheckboxCaptcha') !== null ||
     document.querySelector('#captcha-container') !== null ||
+    document.querySelector('iframe[src*="captcha"]') !== null ||
+    document.querySelector('[class*="SmartCaptcha"]') !== null ||
+    document.querySelector('[data-testid*="captcha"]') !== null ||
     document.title.toLowerCase().includes('капча') ||
-    document.title.toLowerCase().includes('робот');
+    document.title.toLowerCase().includes('робот') ||
+    document.title.toLowerCase().includes('antirobot');
 
   if (hasCaptcha) {
     return { items: [], hasCaptcha: true, totalCountOnPage: 0 };
@@ -133,30 +144,40 @@ export function parseKinopoiskPage(category: 'ratings' | 'watchlist'): {
         }
       }
 
+      // The original (usually English) title, when the card carries it. This is
+      // the single strongest matching signal downstream, so it is worth the
+      // extra query — but only text that is actually Latin script qualifies,
+      // because a second Russian line is a subtitle, not an original title.
+      if (!originalTitle) {
+        const originalNode = card.querySelector(
+          '[class*="styles_originalTitle"], [class*="originalTitle"], [class*="subtitle"]'
+        );
+        const candidate = originalNode?.textContent?.trim() ?? '';
+        if (candidate.length >= 2 && /[A-Za-z]/.test(candidate) && !/[А-Яа-яЁё]/.test(candidate)) {
+          originalTitle = candidate.replace(/\s*\(\d{4}\).*$/, '').trim() || undefined;
+        }
+      }
+
       if (!title || title.length < 2 || title.includes('VPN')) return;
       seenIds.add(kpId);
 
-      // Extract rating if ratings category
+      // Extract rating if ratings category.
+      //
+      // Only a node that *declares itself* the user's rating is trusted. On the
+      // desktop votes page the card's first text line is the table row number
+      // (1..25), so a positional "first number in the card" fallback invents a
+      // rating for every unparsed card — and the scraper runs on exactly that
+      // page. Wrong ratings are worse than missing ones here: a wrong rating is
+      // pushed to a real account, a missing one just shows up as unrated.
       let rating: number | undefined = undefined;
       if (category === 'ratings') {
         const ratingNode = card.querySelector(
-          'span[class*="styles_value__"], div[class*="styles_overlaySlot"] span, div[class*="vote_"], span[class*="rating"], [class*="myVote"], div[class*="userRating"], [data-tid="user-rating"]'
+          '[class*="myVote"], [class*="userRating"], [data-tid="user-rating"], [class*="styles_userRating"]'
         );
-        if (ratingNode) {
-          const parsed = parseInt(ratingNode.textContent?.trim() || '', 10);
-          if (!isNaN(parsed) && parsed >= 1 && parsed <= 10) {
-            rating = parsed;
-          }
-        }
-        // Fallback: check first numeric word in card text
-        if (rating === undefined) {
-          const lines = (card.innerText || '').split('\n').map((l) => l.trim()).filter(Boolean);
-          if (lines.length > 0) {
-            const num = parseInt(lines[0], 10);
-            if (!isNaN(num) && num >= 1 && num <= 10) {
-              rating = num;
-            }
-          }
+        const rawRating = ratingNode?.textContent?.trim() ?? '';
+        const parsed = parseInt(rawRating.replace(/[^\d]/g, ''), 10);
+        if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= 10) {
+          rating = parsed;
         }
       }
 

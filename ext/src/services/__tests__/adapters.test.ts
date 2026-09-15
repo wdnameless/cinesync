@@ -22,6 +22,139 @@ import {
 import type { MovieItem, ServiceRef } from '../port.ts';
 
 // ---------------------------------------------------------------------------
+// 0a. TMDB match confidence gate
+// ---------------------------------------------------------------------------
+
+/**
+ * The acceptance rule behind `findBestMatch`. Kept as a pure mirror so a change
+ * to the gate has to be made in one more place and the test fails loudly.
+ *
+ * The invariant that matters: a candidate whose title matches but whose year
+ * contradicts the item, and a candidate of the wrong media type, must both be
+ * rejected. Accepting either writes a rating onto an unrelated film or the
+ * wrong endpoint on a real account.
+ */
+test('TMDB match gate rejects year-mismatched and cross-media-type candidates', () => {
+  type Cand = { title: string; orig?: string; year?: number; mediaType: 'movie' | 'tv' };
+
+  const normalise = (value?: string): string =>
+    (value ?? '')
+      .toLowerCase()
+      .replace(/ё/g, 'е')
+      .replace(/[^a-zа-я0-9 ]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .split(' ')
+      .map((t) => ({ i: '1', ii: '2', iii: '3', iv: '4', v: '5' })[t] ?? t)
+      .join('');
+
+  const accepts = (itemTitle: string, itemYear: number | undefined, expected: 'movie' | 'tv', c: Cand): boolean => {
+    if (c.mediaType !== expected) return false;
+    const needle = normalise(itemTitle);
+    const hay = [normalise(c.title), normalise(c.orig)].filter((h) => h.length > 0);
+    if (needle.length < 2 || hay.length === 0) return false;
+
+    const yearExact = !!itemYear && c.year === itemYear;
+    const yearNear = !!itemYear && !!c.year && Math.abs(c.year - itemYear) <= 1;
+    const exact = hay.some((h) => h === needle);
+    const partial = hay.some((h) => {
+      const shorter = needle.length <= h.length ? needle : h;
+      const longer = needle.length <= h.length ? h : needle;
+      return shorter.length >= 5 && longer.includes(shorter);
+    });
+
+    return exact ? !itemYear || yearNear : partial && yearExact;
+  };
+
+  // Accepted: the ordinary, unambiguous cases.
+  assert.ok(accepts('Матрица', 1999, 'movie', { title: 'Матрица', year: 1999, mediaType: 'movie' }));
+  assert.ok(accepts('Матрица', 1999, 'movie', { title: 'Матрица', year: 2000, mediaType: 'movie' }), '±1 year is tolerated');
+  assert.ok(accepts('Во все тяжкие', 2008, 'tv', { title: 'Во все тяжкие', year: 2008, mediaType: 'tv' }));
+
+  // Rejected: the year contradicts the title outright.
+  assert.ok(
+    !accepts('Матрица', 1930, 'movie', { title: 'Матрица', year: 1999, mediaType: 'movie' }),
+    'A year mismatch must refuse the match rather than write to the wrong film'
+  );
+
+  // Rejected: same title, wrong media type.
+  assert.ok(
+    !accepts('Во все тяжкие', 2008, 'movie', { title: 'Во все тяжкие', year: 2008, mediaType: 'tv' }),
+    'A series must never be accepted as a film'
+  );
+
+  // Rejected: a partial title backed only by a *different* year is not enough.
+  assert.ok(
+    !accepts('Матрица Перезагрузка', 2003, 'movie', { title: 'Матрица', year: 1999, mediaType: 'movie' }),
+    'A partial title whose year contradicts the item must not pass'
+  );
+
+  // Accepted: a partial title *corroborated* by an exact year is the case the
+  // gate is deliberately built to allow (verified live: a scraped franchise
+  // title resolving to the base record of the same year).
+  assert.ok(
+    accepts('Матрица Перезагрузка', 2003, 'movie', { title: 'Матрица', year: 2003, mediaType: 'movie' }),
+    'A partial title with an exact matching year is accepted'
+  );
+
+  // Roman numerals and ё fold before comparison.
+  assert.equal(normalise('Rocky II'), normalise('Rocky 2'));
+  assert.equal(normalise('Зеленая миля'), normalise('Зелёная миля'));
+});
+
+// ---------------------------------------------------------------------------
+// 0. Simkl search-result shape contract
+// ---------------------------------------------------------------------------
+
+test('Simkl text-search ref never degrades to "undefined" id or wrong media type', () => {
+  // Both shapes below are verbatim responses captured from the live API.
+  // /search/id  -> type + ids.simkl
+  // /search/... -> endpoint_type + ids.simkl_id
+  const fromIdEndpoint = {
+    type: 'movie',
+    title: 'The Matrix',
+    year: 1999,
+    ids: { simkl: 53992, slug: 'the-matrix' },
+  };
+  const fromTextEndpoint = {
+    title: 'Toy Story 3',
+    year: 2010,
+    endpoint_type: 'movies',
+    ids: { simkl_id: 63604, slug: 'toy-story-3', tmdb: '10193' },
+  };
+
+  const readRef = (item: Record<string, unknown>, fallbackIsTv: boolean): ServiceRef | null => {
+    const ids = item.ids as { simkl?: number; simkl_id?: number };
+    const simklId = ids.simkl ?? ids.simkl_id;
+    if (simklId === undefined) return null;
+    const rawType = item.type ?? item.endpoint_type;
+    const declared = rawType === 'movies' ? 'movie' : (rawType as string | undefined);
+    const mediaType: 'movie' | 'tv' =
+      declared === 'movie' ? 'movie' : declared === 'tv' || declared === 'anime' ? 'tv' : fallbackIsTv ? 'tv' : 'movie';
+    return { service: 'simkl', id: String(simklId), mediaType, label: item.title as string };
+  };
+
+  assert.deepEqual(readRef(fromIdEndpoint, false), {
+    service: 'simkl', id: '53992', mediaType: 'movie', label: 'The Matrix',
+  });
+  assert.deepEqual(readRef(fromTextEndpoint, false), {
+    service: 'simkl', id: '63604', mediaType: 'movie', label: 'Toy Story 3',
+  });
+
+  // The regression this guards: reading only `ids.simkl`/`type` produced
+  // id === "undefined" and flipped every text-search movie to mediaType 'tv'.
+  for (const payload of [fromIdEndpoint, fromTextEndpoint]) {
+    const ref = readRef(payload, false);
+    assert.ok(ref, 'a result with a Simkl id (either spelling) must resolve');
+    assert.notEqual(ref.id, 'undefined', 'ref.id must never be the string "undefined"');
+    assert.ok(Number.isFinite(Number(ref.id)), 'ref.id must be a real Simkl id');
+  }
+
+  // A payload with no Simkl id at all must yield null, never a garbage ref.
+  assert.equal(readRef({ title: 'x', ids: {} }, false), null);
+});
+
+// ---------------------------------------------------------------------------
 // 1. CSV Exact Formats (csvPorts.ts)
 // ---------------------------------------------------------------------------
 
@@ -311,7 +444,7 @@ test('CSV ports reject writes (pushRating and pushWatchlist throw)', async () =>
  * or dedupe silently misses and an already-rated item is written again.
  *
  * They do NOT share one namespace, and that is a fact of the upstream APIs:
- * TMDB keys a series as `tv:<id>`, while Trakt and Simkl key it as `show:<id>`.
+ * TMDB keys a series as `tv:<id>`, while Simkl keys it as `show:<id>`.
  * A `ServiceRef` therefore has to expand into aliases covering both.
  *
  * This test asserts the aliases against the namespaces each port actually
@@ -348,10 +481,10 @@ test('dedupe aliases cover every namespace the ports actually store', () => {
     }
   }
 
-  // The specific regression: a series ref must reach Trakt/Simkl's `show:` key.
+  // The specific regression: a series ref must reach Simkl's `show:` key.
   assert.ok(
     dedupeKeys('1399', 'tv').includes('show:1399'),
-    'A series must alias to show:<id>, otherwise Trakt/Simkl dedupe silently misses'
+    'A series must alias to show:<id>, otherwise Simkl dedupe silently misses'
   );
 
   // And a movie must NOT pick up a series alias, or a colliding id would

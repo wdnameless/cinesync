@@ -25,24 +25,42 @@ export class AuthExpiredError extends Error {
 }
 
 export interface SimklPinResponse {
+  result?: string;
+  message?: string;
   user_code: string;
+  device_code?: string;
   verification_url: string;
   expires_in: number;
   interval: number;
 }
 
 export interface SimklTokenResponse {
-  access_token: string;
+  access_token?: string;
   token_type?: string;
   scope?: string;
+  result?: string;
+  message?: string;
 }
 
+/**
+ * Simkl search results are NOT one shape, and the two endpoints used by
+ * `resolve` disagree on both field names:
+ *
+ * - `GET /search/id?...` returns `type: 'movie' | 'tv' | 'anime'` and names the
+ *   Simkl id `ids.simkl` (numeric).
+ * - `GET /search/{type}?q=...` returns `endpoint_type: 'movies' | 'tv' | 'anime'`
+ *   and names the Simkl id `ids.simkl_id`.
+ *
+ * Reading only the `/search/id` spelling is what produced `id: "undefined"`.
+ */
 interface SimklSearchItem {
   title: string;
   year?: number;
   type?: 'movie' | 'tv' | 'anime';
+  endpoint_type?: 'movies' | 'tv' | 'anime' | string;
   ids: {
-    simkl: number;
+    simkl?: number;
+    simkl_id?: number;
     imdb?: string;
     tmdb?: string | number;
     slug?: string;
@@ -204,6 +222,15 @@ export class SimklPort implements MediaServicePort {
     );
   }
 
+  /**
+   * Polls the PIN endpoint until the user approves, the PIN expires, or the
+   * declared lifetime elapses.
+   *
+   * The live contract is HTTP **200** with `{"result":"KO","message":
+   * "Authorization pending"}` while waiting — not HTTP 400. The loop therefore
+   * has to decide from the body, and the `throw err` in the catch would have
+   * aborted on any transport hiccup instead of continuing to poll.
+   */
   async pollForToken(
     userCode: string,
     intervalSeconds = 5,
@@ -212,42 +239,57 @@ export class SimklPort implements MediaServicePort {
     const startTime = Date.now();
     const intervalMs = Math.max(intervalSeconds, 1) * 1000;
     const expiryMs = expiresInSeconds * 1000;
+    let lastMessage = '';
 
     while (Date.now() - startTime < expiryMs) {
-      await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
 
+      let payload: SimklTokenResponse | undefined;
       try {
-        const tokenData = await jsonRequest<SimklTokenResponse>(
+        payload = await jsonRequest<SimklTokenResponse>(
           `${SIMKL_API_BASE}/oauth/pin/${encodeURIComponent(userCode)}?client_id=${encodeURIComponent(
             this.clientId
           )}`,
-          {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-          }
+          { method: 'GET', headers: { 'Content-Type': 'application/json' } }
         );
-
-        if (tokenData && tokenData.access_token) {
-          this.accessToken = tokenData.access_token;
-          return tokenData;
-        }
       } catch (err: unknown) {
-        if (typeof err === 'object' && err !== null) {
-          const record = err as Record<string, unknown>;
-          // HTTP 400 = pending
-          if (record.status === 400) {
-            continue;
-          }
-          // HTTP 404 or 410 = expired
-          if (record.status === 404 || record.status === 410) {
-            throw new Error('Simkl PIN expired');
-          }
+        const status =
+          typeof err === 'object' && err !== null && 'status' in err
+            ? Number(err.status)
+            : undefined;
+
+        if (status === 404 || status === 410) {
+          throw new Error('Simkl PIN expired');
         }
-        throw err;
+
+        // A pending PIN is reported as 200 in practice, but tolerate 400/429
+        // for the same meaning and keep polling; anything else is transient.
+        if (status === 400 || status === 429 || status === undefined) {
+          lastMessage = err instanceof Error ? err.message : String(err);
+          continue;
+        }
+        lastMessage = err instanceof Error ? err.message : String(err);
+        continue;
       }
+
+      if (payload?.access_token) {
+        this.accessToken = payload.access_token;
+        return payload;
+      }
+
+      // 200 with an explicit failure result: pending, or a real error.
+      const message = payload?.message ?? '';
+      if (payload?.result === 'OK' && !payload.access_token) {
+        lastMessage = message || 'Simkl did not return a token';
+        continue;
+      }
+      if (message.toLowerCase().includes('expired') || message.toLowerCase().includes('invalid code')) {
+        throw new Error(`Simkl PIN rejected: ${message}`);
+      }
+      lastMessage = message || 'Authorization pending';
     }
 
-    throw new Error('Simkl PIN polling timed out');
+    throw new Error(`Simkl PIN polling timed out${lastMessage ? `: ${lastMessage}` : ''}`);
   }
 
   async ping(): Promise<boolean> {
@@ -330,13 +372,10 @@ export class SimklPort implements MediaServicePort {
         headers,
       });
       if (Array.isArray(searchResults) && searchResults.length > 0) {
-        const first = searchResults[0];
-        return {
-          service: 'simkl',
-          id: String(first.ids.simkl),
-          mediaType: first.type === 'movie' ? 'movie' : 'tv',
-          label: first.title,
-        };
+        // This endpoint answers with `endpoint_type`/`ids.simkl_id`, not
+        // `type`/`ids.simkl` — go through the shared normalizer so the ref
+        // carries a real Simkl id and the right media type.
+        return this.normalizeSearchItem(searchResults, typePath === 'tv');
       }
     } catch (err: unknown) {
       if (isHttpAuthExpired(err)) {
@@ -349,16 +388,32 @@ export class SimklPort implements MediaServicePort {
   }
 
   private normalizeSearchItem(
-    result: SimklSearchItem[] | SimklSearchItem | null | undefined
+    result: SimklSearchItem[] | SimklSearchItem | null | undefined,
+    fallbackIsTv = false
   ): ServiceRef | null {
     if (!result) return null;
     const item = Array.isArray(result) ? result[0] : result;
-    if (!item || !item.ids || !item.ids.simkl) return null;
+    if (!item || !item.ids) return null;
 
-    const mediaType: 'movie' | 'tv' = item.type === 'movie' ? 'movie' : 'tv';
+    const simklId = item.ids.simkl ?? item.ids.simkl_id;
+    if (simklId === undefined || simklId === null) return null;
+
+    // `type` comes from /search/id; `endpoint_type` from /search/{type}
+    // ('movies' is plural there). Neither present -> trust the requested type.
+    const declaredType =
+      item.type ?? (item.endpoint_type === 'movies' ? 'movie' : item.endpoint_type);
+    const mediaType: 'movie' | 'tv' =
+      declaredType === 'movie'
+        ? 'movie'
+        : declaredType === 'tv' || declaredType === 'anime'
+          ? 'tv'
+          : fallbackIsTv
+            ? 'tv'
+            : 'movie';
+
     return {
       service: 'simkl',
-      id: String(item.ids.simkl),
+      id: String(simklId),
       mediaType,
       label: item.title,
     };

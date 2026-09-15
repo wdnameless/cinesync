@@ -2,6 +2,59 @@ import { KPItem, TMDBSearchResult, TMDBAuth } from './types';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 
+/**
+ * Generates the plausible ё spellings of a title for a literal-title search.
+ *
+ * Kinopoisk and TMDB disagree about е/ё often enough to matter ("Зеленая миля"
+ * vs "Зелёная миля"). TMDB's search does not fold the letters, so the caller has
+ * to try candidates. Replacing every е at once produces a title no one writes,
+ * so each е is flipped on its own; the all-flipped form is added last. The list
+ * is capped because the request budget is not free and titles are short.
+ */
+function yoVariants(title: string): string[] {
+  const positions: number[] = [];
+  for (let i = 0; i < title.length; i++) {
+    const ch = title[i];
+    if (ch === 'е' || ch === 'Е') positions.push(i);
+    if (positions.length >= 6) break;
+  }
+  if (positions.length === 0) return [];
+
+  const variants: string[] = [];
+  for (const index of positions) {
+    const flipped = title.slice(0, index) + (title[index] === 'е' ? 'ё' : 'Ё') + title.slice(index + 1);
+    variants.push(flipped);
+  }
+
+  const allFlipped = title.replace(/е/g, 'ё').replace(/Е/g, 'Ё');
+  return [...new Set([...variants, allFlipped])];
+}
+
+const ROMAN_NUMERALS: Record<string, string> = {
+  i: '1', ii: '2', iii: '3', iv: '4', v: '5', vi: '6',
+  vii: '7', viii: '8', ix: '9', x: '10', xi: '11', xii: '12',
+};
+
+/**
+ * Folds a title into a comparable form for matching.
+ *
+ * Cyrillic ё and е are the same letter to a reader but different characters to
+ * a string comparison, and TMDB is inconsistent about which one it stores.
+ * Latin and Cyrillic lookalikes appear in mixed-script titles. A trailing roman
+ * numeral ("Rocky II") and its Arabic form ("Rocky 2") must compare equal.
+ */
+function normalizeTitle(value?: string): string {
+  const lowered = (value ?? '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^a-zа-я0-9 ]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const tokens = lowered.split(' ').map((token) => ROMAN_NUMERALS[token] ?? token);
+  return tokens.join('');
+}
+
 export class TMDBClient {
   private apiKey: string;
   private sessionId?: string;
@@ -117,22 +170,45 @@ export class TMDBClient {
   }
 
   /**
-   * Searches TMDB for matching media using Multi-Search or specific movie/tv search.
-   * Ranks candidates by title similarity and release year proximity.
+   * Searches TMDB for the media record matching a Kinopoisk item, and returns it
+   * only when the match clears a confidence gate.
+   *
+   * Two things are deliberately strict here, because the caller writes a rating
+   * onto whatever this returns and a wrong answer silently corrupts the account:
+   *
+   * 1. Only the endpoint matching the item's own media type is searched
+   *    (`/search/movie` for films, `/search/tv` for series). `/search/multi`
+   *    accepts both and silently ignores `primary_release_year`, so it could
+   *    return a series for a film and the rating would land on the wrong record.
+   *    The type-specific endpoints also honour the year filter, which makes the
+   *    candidate set far less noisy to begin with.
+   * 2. A candidate is returned only if a title really matches — exact title, or a
+   *    partial title backed by an exact year. There is no "best of a bad bunch"
+   *    fallback: a low-confidence match returns `null` so the caller counts a
+   *    failure instead of writing to an unrelated film.
    */
   public async findBestMatch(item: KPItem): Promise<TMDBSearchResult | null> {
-    // 0. If item has imdbId, use exact TMDB /find endpoint
+    const expectedType: 'movie' | 'tv' = item.type === 'series' ? 'tv' : 'movie';
+
+    // 0. An IMDb id is authoritative — but only when it resolves to the same
+    //    media type the scraped item claims.
     if (item.imdbId) {
       try {
         const findRes = await this.request<{
           movie_results?: TMDBSearchResult[];
           tv_results?: TMDBSearchResult[];
         }>(`/find/${item.imdbId}`, {}, { external_source: 'imdb_id' });
-        if (findRes.movie_results && findRes.movie_results.length > 0) {
-          return { ...findRes.movie_results[0], media_type: 'movie' };
+
+        const sameType = expectedType === 'movie' ? findRes.movie_results : findRes.tv_results;
+        const otherType = expectedType === 'movie' ? findRes.tv_results : findRes.movie_results;
+
+        if (sameType && sameType.length > 0) {
+          return { ...sameType[0], media_type: expectedType };
         }
-        if (findRes.tv_results && findRes.tv_results.length > 0) {
-          return { ...findRes.tv_results[0], media_type: 'tv' };
+        if (otherType && otherType.length > 0) {
+          // The id belongs to a record of a different media type: the scraped
+          // type and the external id disagree. Refuse rather than guess.
+          return null;
         }
       } catch {
         // fallback to title search
@@ -140,111 +216,125 @@ export class TMDBClient {
     }
 
     const candidates: TMDBSearchResult[] = [];
-    // Helper search function
-    const searchWith = async (queryText: string, year?: number) => {
-      try {
-        const params: Record<string, string> = {
-          query: queryText,
-          language: 'ru-RU',
-          include_adult: 'true',
-        };
-        if (year) {
-          params.primary_release_year = year.toString();
-          params.first_air_date_year = year.toString();
-        }
 
-        const data = await this.request<{ results: TMDBSearchResult[] }>('/search/multi', {}, params);
-        if (data.results && data.results.length > 0) {
-          candidates.push(
-            ...data.results.filter((r) => r.media_type === 'movie' || r.media_type === 'tv')
-          );
+    const searchWith = async (queryText: string) => {
+      const endpoint = expectedType === 'movie' ? '/search/movie' : '/search/tv';
+      const run = async (year?: number) => {
+        try {
+          const params: Record<string, string> = {
+            query: queryText,
+            language: 'ru-RU',
+            include_adult: 'true',
+          };
+          if (year) {
+            if (expectedType === 'movie') {
+              params.year = String(year);
+            } else {
+              params.first_air_date_year = String(year);
+            }
+          }
+
+          const data = await this.request<{ results: TMDBSearchResult[] }>(endpoint, {}, params);
+          for (const hit of data.results ?? []) {
+            if (!candidates.some((c) => c.id === hit.id)) {
+              candidates.push({ ...hit, media_type: expectedType });
+            }
+          }
+        } catch {
+          // Continue with the next query variant.
         }
-      } catch {
-        // Continue search fallback
+      };
+
+      if (item.year) {
+        await run(item.year);
+      }
+      if (candidates.length === 0) {
+        await run();
       }
     };
 
-    // 1. Search by original title if available
+    // 1. Original title, when enrichment supplied one — the strongest signal.
     if (item.originalTitle) {
-      await searchWith(item.originalTitle, item.year);
-      if (candidates.length === 0 && item.year) {
-        // Try without strict year
-        await searchWith(item.originalTitle);
-      }
+      await searchWith(item.originalTitle);
     }
 
-    // 2. Search by Russian / localized title
+    // 2. Localized / scraped title.
     if (candidates.length === 0 && item.title) {
-      await searchWith(item.title, item.year);
+      await searchWith(item.title);
+
+      // A Kinopoisk title may spell е where TMDB stores ё, and TMDB's search is
+      // a literal string match that does not fold the two letters. Replacing
+      // *every* е at once is wrong — "Зеленая миля" would become "Зёлёная
+      // миля" and match nothing — so try one position at a time, plus the
+      // all-replaced form, bounded so a pathological title cannot fan out.
       if (candidates.length === 0) {
-        const titleYo = item.title.replace(/е/g, 'ё').replace(/Е/g, 'Ё');
-        if (titleYo !== item.title) {
-          await searchWith(titleYo, item.year);
+        for (const variant of yoVariants(item.title)) {
+          if (candidates.length > 0) break;
+          await searchWith(variant);
         }
       }
+
+      // Franchise items sometimes live upstream under the subtitle alone.
       if (candidates.length === 0 && item.title.includes(':')) {
         const partAfterColon = item.title.split(':').slice(1).join(':').trim();
         if (partAfterColon) {
-          await searchWith(partAfterColon, item.year);
-          if (candidates.length === 0) {
-            await searchWith(partAfterColon);
-          }
+          await searchWith(partAfterColon);
         }
       }
-      if (candidates.length === 0 && item.year) {
+
+      if (candidates.length === 0) {
         await searchWith(item.title);
       }
     }
+
     if (candidates.length === 0) {
       return null;
     }
 
-    // Scoring candidates
-    const normalize = (s?: string) =>
-      (s || '')
-        .toLowerCase()
-        .replace(/ё/g, 'е')
-        .replace(/[^a-zа-я0-9]/gi, '')
-        .trim();
+    const needles = [
+      normalizeTitle(item.title),
+      normalizeTitle(item.originalTitle),
+      item.title.includes(':') ? normalizeTitle(item.title.split(':').slice(1).join(':')) : '',
+    ].filter((n) => n.length >= 2);
 
-    const targetNormRu = normalize(item.title);
-    const targetNormOrig = normalize(item.originalTitle);
-    const targetPartRu = item.title && item.title.includes(':') ? normalize(item.title.split(':').slice(1).join(':')) : '';
     let bestMatch: TMDBSearchResult | null = null;
-    let maxScore = -1;
+    let bestScore = -Infinity;
 
     for (const c of candidates) {
-      let score = 0;
-      const cTitle = normalize(c.title || c.name);
-      const cOrig = normalize(c.original_title || c.original_name);
+      const haystacks = [normalizeTitle(c.title || c.name), normalizeTitle(c.original_title || c.original_name)].filter(
+        (h) => h.length > 0
+      );
+      if (haystacks.length === 0) continue;
 
-      // Title matching
-      if (targetNormOrig && cOrig === targetNormOrig) score += 50;
-      else if (targetNormOrig && cOrig.includes(targetNormOrig)) score += 30;
-      if (targetNormRu && cTitle === targetNormRu) score += 40;
-      else if (targetNormRu && cTitle.includes(targetNormRu)) score += 20;
-      else if (targetPartRu && (cTitle === targetPartRu || cTitle.includes(targetPartRu))) score += 35;
-
-      // Year matching
       const releaseDate = c.release_date || c.first_air_date;
-      if (releaseDate && item.year) {
-        const candYear = parseInt(releaseDate.slice(0, 4), 10);
-        if (candYear === item.year) {
-          score += 30;
-        } else if (Math.abs(candYear - item.year) <= 1) {
-          score += 15;
-        } else {
-          score -= 20; // Year mismatch penalty
-        }
-      }
+      const candYear = releaseDate ? parseInt(releaseDate.slice(0, 4), 10) : NaN;
+      const yearExact = !!item.year && candYear === item.year;
+      const yearNear = !!item.year && !Number.isNaN(candYear) && Math.abs(candYear - item.year) <= 1;
 
-      // Popularity boost as tie breaker
-      if (c.popularity) {
-        score += Math.min(10, c.popularity / 10);
-      }
+      const titleExact = needles.some((n) => haystacks.some((h) => h === n));
+      const titlePartial = needles.some((n) =>
+        haystacks.some((h) => {
+          const shorter = n.length <= h.length ? n : h;
+          const longer = n.length <= h.length ? h : n;
+          return shorter.length >= 5 && longer.includes(shorter);
+        })
+      );
 
-      if (score > maxScore) {
-        maxScore = score;
+      // The acceptance gate. Title alone is enough when the item has no year to
+      // contradict it; otherwise the year has to corroborate the title.
+      const confident = titleExact ? !item.year || yearNear : titlePartial && yearExact;
+      if (!confident) continue;
+
+      let score = 0;
+      if (titleExact) score += 60;
+      else if (titlePartial) score += 25;
+      if (yearExact) score += 30;
+      else if (yearNear) score += 15;
+      if (haystacks.some((h) => needles.includes(h))) score += 10;
+      score += Math.min(10, (c.popularity ?? 0) / 10);
+
+      if (score > bestScore) {
+        bestScore = score;
         bestMatch = c;
       }
     }

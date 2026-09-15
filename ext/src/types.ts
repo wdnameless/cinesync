@@ -97,6 +97,8 @@ export type RuntimeMessage =
   | { action: 'RESET_STATE' }
   | { action: 'SAVE_SERVICE_CREDENTIALS'; service: ServiceId; credentials: ServiceCredentials }
   | { action: 'PING_SERVICE'; service: ServiceId }
+  | { action: 'SIMKL_START_AUTH' }
+  | { action: 'SIMKL_COMPLETE_AUTH'; userCode: string }
   | { action: 'TOGGLE_TARGET'; service: ServiceId; enabled: boolean }
   | { action: 'EXPORT_SERVICE_CSV'; service: ServiceId }
   | { action: 'TMDB_START_AUTH' }

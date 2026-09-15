@@ -63,7 +63,7 @@ const langEn = document.getElementById('langEn');
 const tmdbPingBadge = document.getElementById('tmdbPingBadge');
 const tmdbPingText = document.getElementById('tmdbPingText');
 
-const ALL_SERVICES: ServiceId[] = ['tmdb', 'trakt', 'simkl', 'letterboxd', 'imdb', 'movielens', 'kinopoisk'];
+const ALL_SERVICES: ServiceId[] = ['tmdb', 'simkl', 'letterboxd', 'imdb', 'movielens', 'kinopoisk'];
 const CSV_SERVICES: ServiceId[] = ['letterboxd', 'imdb', 'movielens'];
 
 /** Per-service DOM handles, resolved from the frozen Zone E id contract. */
@@ -100,7 +100,6 @@ function resolveServiceElements(service: ServiceId): ServiceElements {
 
 const serviceElements: Record<ServiceId, ServiceElements> = {
   tmdb: resolveServiceElements('tmdb'),
-  trakt: resolveServiceElements('trakt'),
   simkl: resolveServiceElements('simkl'),
   letterboxd: resolveServiceElements('letterboxd'),
   imdb: resolveServiceElements('imdb'),
@@ -170,6 +169,12 @@ const translations: Record<Lang, Record<string, string>> = {
     btnExportFull: '💾 Полный архив базы (Кинопоиск CSV)',
     logsTitle: 'Логи событий',
     readyTitle: 'Готов к запуску',
+    inProgress: 'В процессе...',
+    syncingPrefix: 'Синхронизация:',
+    captchaDetected: '⚠️ Обнаружена капча! Пройдите её во вкладке Кинопоиска',
+    scanning: 'Сбор...',
+    transferring: 'Перенос...',
+    btnSyncNow: '2. Синхронизировать',
     resetConfirm: 'Сбросить прогресс и очистить очередь?',
     emptyRatings: 'Нет собранных оценок! Сначала нажмите "1. Сканировать КП".',
     emptyWl: 'Список «Буду смотреть» пуст! Сначала нажмите "1. Сканировать КП".',
@@ -188,14 +193,12 @@ const translations: Record<Lang, Record<string, string>> = {
     importNoticeMovielens: 'MovieLens не поддерживает импорт пользовательских файлов. Доступен только экспорт CSV.',
     sourceNoticeKinopoisk: 'Кинопоиск является источником данных, а не получателем синхронизации.',
     noTargetsSelected: 'Выберите хотя бы один сервис для синхронизации!',
-    traktSecretNotice: 'Для работы с Trakt требуется Client ID и Client Secret вашего приложения Trakt API.',
     simklPinNotice: 'Для работы с Simkl требуется Client ID вашего приложения и подтверждение PIN-кода.',
     saveCredentialsSuccess: 'Данные сохранены',
     saveCredentialsError: 'Ошибка при сохранении данных',
     pingError: 'Ошибка проверки',
     // Service navigation labels
     svcTmdb: 'TMDB',
-    svcTrakt: 'Trakt',
     svcSimkl: 'Simkl',
     svcLetterboxd: 'Letterboxd',
     svcImdb: 'IMDb',
@@ -221,13 +224,6 @@ const translations: Record<Lang, Record<string, string>> = {
     tmdbTitle: 'The Movie Database (TMDB)',
     tmdbDesc: 'Официальный API v3: полная синхронизация оценок и списка «Буду смотреть».',
     tmdbKeyLabel: 'TMDB v3 API Key',
-    // Trakt
-    traktTitle: 'Trakt',
-    traktDesc: 'Оценки и список отложенного. Требуется ваше приложение Trakt API.',
-    traktClientIdLabel: 'Trakt Client ID',
-    traktClientSecretLabel: 'Trakt Client Secret',
-    traktAppNotice: 'Trakt требует собственное приложение: обмен токена невозможен без Client Secret.',
-    traktAuthNotice: 'После сохранения ключей нажмите «Подключить» и подтвердите код на trakt.tv/activate.',
     // Simkl
     simklTitle: 'Simkl',
     simklDesc: 'Оценки и список «Планирую смотреть» через PIN-авторизацию.',
@@ -309,6 +305,12 @@ const translations: Record<Lang, Record<string, string>> = {
     btnExportFull: '💾 Full Backup Archive (CSV)',
     logsTitle: 'Event Logs',
     readyTitle: 'Ready to start',
+    inProgress: 'Working...',
+    syncingPrefix: 'Syncing:',
+    captchaDetected: '⚠️ Captcha detected! Solve it in the Kinopoisk tab',
+    scanning: 'Scanning...',
+    transferring: 'Transferring...',
+    btnSyncNow: '2. Sync now',
     resetConfirm: 'Reset progress and clear queue?',
     emptyRatings: 'No ratings found! Please click "1. Scan Kinopoisk" first.',
     emptyWl: 'Watchlist is empty! Please click "1. Scan Kinopoisk" first.',
@@ -327,14 +329,12 @@ const translations: Record<Lang, Record<string, string>> = {
     importNoticeMovielens: 'MovieLens does not support importing user files. Only CSV export is available.',
     sourceNoticeKinopoisk: 'Kinopoisk is a data source, not a sync destination.',
     noTargetsSelected: 'Please enable at least one target service to sync!',
-    traktSecretNotice: 'Trakt requires your own Trakt API app Client ID and Client Secret.',
     simklPinNotice: 'Simkl requires your app Client ID and PIN authorization.',
     saveCredentialsSuccess: 'Credentials saved',
     saveCredentialsError: 'Error saving credentials',
     pingError: 'Ping check failed',
     // Service navigation labels
     svcTmdb: 'TMDB',
-    svcTrakt: 'Trakt',
     svcSimkl: 'Simkl',
     svcLetterboxd: 'Letterboxd',
     svcImdb: 'IMDb',
@@ -360,13 +360,6 @@ const translations: Record<Lang, Record<string, string>> = {
     tmdbTitle: 'The Movie Database (TMDB)',
     tmdbDesc: 'Official v3 API: full sync of ratings and the watchlist.',
     tmdbKeyLabel: 'TMDB v3 API Key',
-    // Trakt
-    traktTitle: 'Trakt',
-    traktDesc: 'Ratings and watchlist. Requires your own Trakt API application.',
-    traktClientIdLabel: 'Trakt Client ID',
-    traktClientSecretLabel: 'Trakt Client Secret',
-    traktAppNotice: 'Trakt requires your own app: the token exchange cannot work without a Client Secret.',
-    traktAuthNotice: 'After saving credentials click "Connect" and approve the code at trakt.tv/activate.',
     // Simkl
     simklTitle: 'Simkl',
     simklDesc: 'Ratings and plan-to-watch via PIN authorization.',
@@ -766,13 +759,13 @@ function applyStateToUi(state: MigrationState) {
     // Active Item Title
     if (activeTitle) {
       if (state.currentTitle) {
-        activeTitle.textContent = `Синхронизация: ${state.currentTitle}`;
+        activeTitle.textContent = `${dict.syncingPrefix} ${state.currentTitle}`;
         activeTitle.style.color = '#e2e8f0';
       } else if (state.status === 'paused_captcha') {
-        activeTitle.textContent = '⚠️ Обнаружена капча! Пройдите её во вкладке Кинопоиска';
+        activeTitle.textContent = dict.captchaDetected;
         activeTitle.style.color = 'var(--accent-amber)';
       } else {
-        activeTitle.textContent = state.errorMessage || (state.status === 'idle' ? dict.readyTitle : 'В процессе...');
+        activeTitle.textContent = state.errorMessage || (state.status === 'idle' ? dict.readyTitle : dict.inProgress);
         activeTitle.style.color = state.errorMessage ? 'var(--accent-rose)' : 'var(--text-muted)';
       }
     }
@@ -793,7 +786,7 @@ function applyStateToUi(state: MigrationState) {
         const isScraping = state.status === 'scraping';
         startBtn.innerHTML = `
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
-          <span>${isScraping ? (currentLang === 'ru' ? 'Сбор...' : 'Scanning...') : (currentLang === 'ru' ? 'Перенос...' : 'Transferring...')}</span>
+          <span>${isScraping ? dict.scanning : dict.transferring}</span>
         `;
       }
       if (scanBtn) scanBtn.disabled = true;
@@ -804,7 +797,7 @@ function applyStateToUi(state: MigrationState) {
         startBtn.disabled = false;
         startBtn.innerHTML = `
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-          <span>${currentLang === 'ru' ? '2. Синхронизировать' : '2. Sync now'}</span>
+          <span>${dict.btnSyncNow}</span>
         `;
       }
       if (scanBtn) scanBtn.disabled = false;
@@ -1011,6 +1004,52 @@ function exportServiceCsv(service: ServiceId) {
   });
 }
 
+function startSimklAuth() {
+  const dict = translations[currentLang];
+  const els = serviceElements.simkl;
+  const statusEl = document.getElementById('simklStatusText');
+  const loginBtn = els?.loginBtn;
+
+  withBusy(loginBtn, () => {
+    chrome.runtime.sendMessage(
+      { action: 'SIMKL_START_AUTH' },
+      (res: { success?: boolean; userCode?: string; verificationUrl?: string; error?: string } | undefined) => {
+        loginBtn?.classList.remove('is-busy');
+        if (!res?.success || !res.userCode) {
+          if (statusEl) statusEl.textContent = res?.error || dict.pingError;
+          return;
+        }
+
+        // The PIN is confirmed on Simkl, not here, so show it, copy it, and let
+        // the user approve it on the page that opens.
+        if (statusEl) statusEl.textContent = res.userCode;
+        navigator.clipboard?.writeText(res.userCode).catch(() => {});
+        chrome.tabs.create({ url: res.verificationUrl || 'https://simkl.com/pin' });
+
+        alert(
+          currentLang === 'ru'
+            ? `Код ${res.userCode} скопирован. Введите его на открывшейся странице Simkl и нажмите ОК.`
+            : `Code ${res.userCode} copied. Enter it on the Simkl page that just opened, then press OK.`
+        );
+
+        chrome.runtime.sendMessage(
+          { action: 'SIMKL_COMPLETE_AUTH', userCode: res.userCode },
+          (done: { success?: boolean; error?: string } | undefined) => {
+            if (statusEl) {
+              statusEl.textContent = done?.success
+                ? currentLang === 'ru'
+                  ? 'Подключено'
+                  : 'Connected'
+                : done?.error || dict.pingError;
+            }
+            pingService('simkl');
+          }
+        );
+      }
+    );
+  });
+}
+
 for (const service of ALL_SERVICES) {
   const els = serviceElements[service];
 
@@ -1021,7 +1060,10 @@ for (const service of ALL_SERVICES) {
       tmdbLoginBtn?.click();
       return;
     }
-    // Trakt and Simkl both start an interactive auth handshake in the background.
+    if (service === 'simkl') {
+      startSimklAuth();
+      return;
+    }
     pingService(service);
   });
 
@@ -1110,9 +1152,13 @@ startBtn?.addEventListener('click', startSync);
 chrome.storage.local.get(['enabledTargets'], (res) => {
   if (Array.isArray(res.enabledTargets)) {
     enabledTargets = res.enabledTargets as ServiceId[];
-    for (const service of enabledTargets) {
+    // Reflect stored state in BOTH directions. Applying only the stored-on
+    // services left every toggle whose HTML default is `checked` looking armed
+    // while `enabledTargets` was empty — the user pressed Sync, the guard saw
+    // zero targets, and nothing happened with no visible cause.
+    for (const service of ALL_SERVICES) {
       const toggle = serviceElements[service]?.enableToggle;
-      if (toggle) toggle.checked = true;
+      if (toggle) toggle.checked = enabledTargets.includes(service);
     }
   }
 });

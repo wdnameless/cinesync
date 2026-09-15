@@ -15,7 +15,6 @@ import { KinopoiskPort } from './services/kinopoiskPort';
 import { MediaServicePort, ServiceRef } from './services/port';
 import { loadCredentials, saveCredentials, ServiceCredentials } from './services/credentials';
 import { createTmdbPort } from './services/tmdbPort';
-import { TraktPort } from './services/traktPort';
 import { SimklPort } from './services/simklPort';
 import { letterboxdPort, imdbPort, movieLensPort } from './services/csvPorts';
 import { detectKinopoiskUserId, parseKinopoiskPage } from './scraper';
@@ -92,6 +91,27 @@ async function initFromStorage() {
   }
   if (data.kpApiKey) {
     kpClient = new KPClient(data.kpApiKey);
+  }
+
+  // An MV3 service worker is killed whenever the browser decides to, including
+  // mid-run. The in-memory run flags die with it but the persisted status does
+  // not, so a worker restart used to resurrect `migrating`/`scraping` forever:
+  // the popup would render a run that no longer exists and refuse to start a
+  // new one. Anything non-terminal found at startup is by definition dead.
+  const inFlight = ['detecting', 'scraping', 'migrating', 'paused_captcha'];
+  if (inFlight.includes(currentState.status)) {
+    const recoveredTargets = (currentState.targets ?? []).map((t) =>
+      t.status === 'running' || t.status === 'pending'
+        ? { ...t, status: 'skipped' as TargetStatus }
+        : t
+    );
+    currentState = {
+      ...currentState,
+      status: 'idle',
+      currentTitle: undefined,
+      targets: recoveredTargets,
+    };
+    await chrome.storage.local.set({ migrationState: currentState });
   }
 }
 
@@ -179,23 +199,6 @@ async function getPortForService(
         throw new Error('TMDB API Key не настроен. Настройте ключ в секции API.');
       }
       return createTmdbPort(creds);
-    }
-    case 'trakt': {
-      if (!creds?.clientId) {
-        throw new Error('Trakt client_id не настроен. Зарегистрируйте приложение в настройках Trakt.');
-      }
-      return new TraktPort(
-        {
-          clientId: creds.clientId,
-          clientSecret: creds.clientSecret,
-          accessToken: creds.accessToken,
-        },
-        {
-          onLog: (msg) => {
-            logMessage(`[Trakt] ${msg}`, 'warn').catch(() => {});
-          },
-        }
-      );
     }
     case 'simkl': {
       if (!creds?.clientId) {
@@ -331,6 +334,66 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
           break;
         }
 
+        case 'SIMKL_START_AUTH': {
+          // Simkl authorizes with a PIN, not a redirect, so the flow has to be
+          // driven from here: request a code, hand it to the UI to display, and
+          // let the user confirm it on simkl.com/pin.
+          const simklCreds = await loadCredentials('simkl');
+          if (!simklCreds.clientId) {
+            sendResponse({ success: false, error: 'Сначала укажите Simkl Client ID.' });
+            break;
+          }
+          const pinPort = new SimklPort({ clientId: simklCreds.clientId });
+          const pin = await pinPort.requestPin();
+          await chrome.storage.local.set({ simklPendingPin: pin.user_code });
+          await logMessage(`[Simkl] Код подтверждения: ${pin.user_code} — введите его на simkl.com/pin`, 'info');
+          sendResponse({
+            success: true,
+            userCode: pin.user_code,
+            verificationUrl: pin.verification_url,
+            expiresIn: pin.expires_in,
+          });
+          break;
+        }
+
+        case 'SIMKL_COMPLETE_AUTH': {
+          const simklCreds = await loadCredentials('simkl');
+          if (!simklCreds.clientId) {
+            sendResponse({ success: false, error: 'Сначала укажите Simkl Client ID.' });
+            break;
+          }
+          // Fall back to the PIN last handed out, so pressing Connect again
+          // resumes the same code instead of burning a new one.
+          const storedPin = await chrome.storage.local.get('simklPendingPin');
+          const userCode = message.userCode || (storedPin.simklPendingPin as string | undefined);
+          if (!userCode) {
+            sendResponse({ success: false, error: 'Нет активного PIN. Нажмите «Подключить».' });
+            break;
+          }
+
+          const authPort = new SimklPort({ clientId: simklCreds.clientId });
+          try {
+            // Polling the full 15-minute PIN lifetime would hold the message
+            // channel — and the UI's only feedback path — open far longer than
+            // a user waits. Cap the wait and report plainly, so the next press
+            // of Connect picks the same PIN back up.
+            const token = await authPort.pollForToken(userCode, 5, 180);
+            if (!token.access_token) {
+              sendResponse({ success: false, error: token.message || 'Simkl не вернул токен.' });
+              break;
+            }
+            await saveCredentials('simkl', { clientId: simklCreds.clientId, accessToken: token.access_token });
+            await chrome.storage.local.remove('simklPendingPin');
+            await logMessage('[Simkl] Авторизация успешна.', 'success');
+            sendResponse({ success: true });
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            await logMessage(`[Simkl] ${errMsg}`, 'error');
+            sendResponse({ success: false, error: errMsg });
+          }
+          break;
+        }
+
         case 'PING_SERVICE': {
           try {
             // Probe-only: never create a tab or wait on tab load for a ping.
@@ -391,6 +454,12 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
         }
 
         case 'START_SCANNING': {
+          // A second run would race the first one over the same counters and the
+          // same Kinopoisk tab. Refuse instead of silently interleaving them.
+          if (isScanRunning) {
+            sendResponse({ success: false, error: 'Сбор данных уже выполняется' });
+            break;
+          }
           isScanAborted = false;
           isPaused = false;
           isScanRunning = true;
@@ -406,6 +475,10 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
         }
 
         case 'START_SYNC': {
+          if (isSyncRunning) {
+            sendResponse({ success: false, error: 'Синхронизация уже выполняется' });
+            break;
+          }
           isSyncAborted = false;
           isAborted = false;
           isPaused = false;
@@ -444,7 +517,12 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
 
         case 'PAUSE_MIGRATION': {
           isPaused = true;
-          await updateState({ status: 'paused_captcha' });
+          // Only claim the paused state when there is actually work to pause.
+          // Pausing an idle extension used to latch `paused_captcha`, which
+          // hides Start/Stop and disables Scan with no way back.
+          if (isScanRunning || isSyncRunning) {
+            await updateState({ status: 'paused_captcha' });
+          }
           await logMessage('Миграция приостановлена пользователем', 'warn');
           sendResponse({ success: true });
           break;
@@ -452,6 +530,16 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
 
         case 'RESUME_MIGRATION': {
           isPaused = false;
+          // Leaving `paused_captcha` in place stranded the UI: the paused branch
+          // renders Pause+hidden Start and disables Scan, so the run could never
+          // be restarted. Restore the status that matches the work still alive.
+          if (isScanRunning) {
+            await updateState({ status: 'scraping' });
+          } else if (isSyncRunning) {
+            await updateState({ status: 'migrating' });
+          } else if (currentState.status === 'paused_captcha') {
+            await updateState({ status: 'idle', currentTitle: undefined });
+          }
           await logMessage('Возобновление миграции...', 'info');
           sendResponse({ success: true });
           break;
@@ -607,6 +695,17 @@ async function collectKinopoiskItems(
       }
 
       if (res.items.length === 0) {
+        // A zero-item page ends pagination, but it is also what a layout change
+        // or an undetected bot challenge looks like. Overwriting the stored
+        // corpus with the result would silently destroy a scan the user already
+        // paid for, so an empty first page is reported as a failure instead.
+        if (page === 1) {
+          const reason =
+            'Кинопоиск вернул пустую страницу. Это может быть смена вёрстки или скрытая капча — данные не перезаписаны.';
+          await logMessage(`${reason} Проверьте вкладку Кинопоиска и попробуйте снова.`, 'error');
+          await updateState({ status: 'error', errorMessage: reason });
+          return scrapedItems;
+        }
         hasMorePages = false;
         break;
       }
@@ -654,9 +753,9 @@ async function runScanningOnly(category: MediaCategory, delayMs: number, targetU
  * Builds the key aliases used to detect an already-existing entry on a target.
  *
  * Ports do not agree on one namespace, and that is not something this function
- * can change: TMDB keys a series as `tv:<id>`, while Trakt and Simkl key it as
- * `show:<id>` (their own API vocabulary). A ref carries mediaType 'tv', so
- * without the aliases below a series key would never match Trakt/Simkl and
+ * can change: TMDB keys a series as `tv:<id>`, while Simkl keys it as
+ * `show:<id>` (its own API vocabulary). A ref carries mediaType 'tv', so
+ * without the aliases below a series key would never match Simkl and
  * dedupe would silently miss every already-rated show.
  */
 function dedupeKey(ref: ServiceRef): string[] {
@@ -696,7 +795,7 @@ async function runSync(
   }
 
   const enabledTargets = targets.filter(
-    (t) => t === 'tmdb' || t === 'trakt' || t === 'simkl' || t === 'kinopoisk'
+    (t) => t === 'tmdb' || t === 'simkl' || t === 'kinopoisk'
   );
 
   if (enabledTargets.length === 0) {

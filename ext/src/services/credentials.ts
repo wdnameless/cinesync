@@ -14,7 +14,6 @@ export interface ServiceCredentials {
 /** Fixed per-service storage keys. Missing fields stay `undefined` — never a placeholder. */
 export const STORAGE_KEYS: Record<ServiceId, string> = {
   tmdb: 'tmdbAuth', // { apiKey, sessionId, accountId, username } — unchanged
-  trakt: 'traktAuth', // { clientId, clientSecret, accessToken }
   simkl: 'simklAuth', // { clientId, accessToken }
   letterboxd: 'letterboxdAuth', // { userId }
   imdb: 'imdbAuth', // { userId }

@@ -40,3 +40,7 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# store packages
+*.zip
+!ext/package-lock.json

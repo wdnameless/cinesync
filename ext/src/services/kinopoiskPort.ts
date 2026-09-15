@@ -48,30 +48,35 @@ async function injectKinopoiskRating(
     }
   }
 
-  // Verification: Poll for [class*=userRating] containing "Моя оценка" and targetRating
-  const maxWaitMs = 5000;
+  // Verification: poll until the page reports *exactly* the target rating.
+  //
+  // The comparison must be an equality on the parsed number, never a substring
+  // test: "10" contains "1", so a substring check would report success for a
+  // 10 -> 1 change before the DOM had updated at all.
+  const maxWaitMs = 7000;
   const intervalMs = 250;
   const startTime = Date.now();
+  let lastSeen: string | number = 'оценка не отображается';
 
   while (Date.now() - startTime < maxWaitMs) {
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
     const userRatingEl = document.querySelector('[class*=userRating]');
-    if (userRatingEl && userRatingEl.textContent && userRatingEl.textContent.includes('Моя оценка')) {
-      const match = userRatingEl.textContent.match(/Моя оценка\D*(\d+)/i);
-      if (match && parseInt(match[1], 10) === targetRating) {
-        return { success: true, actualRating: targetRating };
-      }
-      if (userRatingEl.textContent.includes(String(targetRating))) {
-        return { success: true, actualRating: targetRating };
+    const text = userRatingEl?.textContent ?? '';
+    if (!text.includes('Моя оценка')) continue;
+
+    const match = text.match(/Моя оценка\D*(\d{1,2})/i);
+    if (match) {
+      const actual = parseInt(match[1], 10);
+      lastSeen = actual;
+      if (actual === targetRating) {
+        return { success: true, actualRating: actual };
       }
     }
   }
 
-  const userRatingEl = document.querySelector('[class*=userRating]');
-  const text = userRatingEl ? (userRatingEl.textContent || '').trim() : 'отсутствует';
   return {
     success: false,
-    error: `Не удалось верифицировать оценку ${targetRating}. Текущее значение: "${text}"`,
+    error: `Не удалось верифицировать оценку ${targetRating}. Текущее значение: "${lastSeen}"`,
   };
 }
 
@@ -81,42 +86,46 @@ async function injectKinopoiskRating(
  * Verification: the button state changes (e.g., text changes to "В планах", aria-pressed changes, etc.)
  */
 async function injectKinopoiskWatchlist(): Promise<{ success: boolean; error?: string }> {
-  const buttons = Array.from(document.querySelectorAll('button'));
-  const watchlistBtn = buttons.find(
-    (b) => b.textContent && b.textContent.trim().includes('Буду смотреть')
-  );
+  // The control only exists as a button on Kinopoisk; the previous version also
+  // accepted any button containing "Смотрите", which matches the Yandex Plus
+  // streaming promo ("Смотрите по подписке") rendered on nearly every film page.
+  // That reported success without touching the watchlist at all.
+  const readWatchlistButton = (): HTMLElement | null =>
+    Array.from(document.querySelectorAll('button')).find((b) => {
+      const text = (b.textContent || '').trim();
+      return text === 'Буду смотреть' || text.startsWith('Буду смотреть') || text === 'В планах';
+    }) as HTMLElement | null;
 
+  const watchlistBtn = readWatchlistButton();
   if (!watchlistBtn) {
-    // If button doesn't say "Буду смотреть", user might already have it in watchlist
-    const isAlreadyInWatchlist = buttons.some(
-      (b) => b.textContent && (b.textContent.includes('В планах') || b.textContent.includes('Смотрите'))
-    );
-    if (isAlreadyInWatchlist) {
-      return { success: true };
-    }
     return {
       success: false,
       error: 'Кнопка "Буду смотреть" не найдена на странице',
     };
   }
 
-  const initialText = watchlistBtn.textContent || '';
+  const label = (watchlistBtn.textContent || '').trim();
+  if (label === 'В планах') {
+    // Already in the watchlist — nothing to do.
+    return { success: true };
+  }
+
   watchlistBtn.click();
 
-  // Verification: wait for state change
-  const maxWaitMs = 4000;
+  // Verification: the control must leave the "Буду смотреть" state. Anything
+  // short of an observed state change is a failure, never an assumed success.
+  const maxWaitMs = 6000;
   const intervalMs = 250;
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    const currentBtn = Array.from(document.querySelectorAll('button')).find(
-      (b) => b.textContent && b.textContent.trim().includes('Буду смотреть')
-    );
-    if (!currentBtn || currentBtn.textContent !== initialText) {
+    const current = readWatchlistButton();
+    if (!current) {
       return { success: true };
     }
-    if (watchlistBtn.getAttribute('aria-pressed') === 'true') {
+    const currentLabel = (current.textContent || '').trim();
+    if (currentLabel !== label || current.getAttribute('aria-pressed') === 'true') {
       return { success: true };
     }
   }
@@ -141,16 +150,20 @@ function injectKinopoiskPageStatus(): {
   let rating: number | null = null;
   const userRatingEl = document.querySelector('[class*=userRating]');
   if (userRatingEl && userRatingEl.textContent && userRatingEl.textContent.includes('Моя оценка')) {
-    const rateMatch = userRatingEl.textContent.match(/Моя оценка\D*(\d+)/i);
+    const rateMatch = userRatingEl.textContent.match(/Моя оценка\D*(\d{1,2})/i);
     if (rateMatch) {
       rating = parseInt(rateMatch[1], 10);
     }
   }
 
-  const hasWatchlistBtn = Array.from(document.querySelectorAll('button')).some(
-    (b) => b.textContent && b.textContent.trim() === 'Буду смотреть'
+  // Watchlist state must be identified positively. The previous version treated
+  // "the 'Буду смотреть' button is absent" as "in watchlist", which is also true
+  // for a signed-out user, a page still loading, or a layout change — it turned
+  // every unknown into an affirmative answer.
+  const watchlistLabels = Array.from(document.querySelectorAll('button')).map((b) => (b.textContent || '').trim());
+  const inWatchlist = watchlistLabels.some(
+    (text) => text === 'В планах' || text.startsWith('В планах') || text.startsWith('Смотрю')
   );
-  const inWatchlist = !hasWatchlistBtn && !!filmId;
 
   return { filmId, rating, inWatchlist };
 }
