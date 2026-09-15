@@ -1,0 +1,74 @@
+name: Release
+
+# Tagging is what publishes. Pushing `v3.1.0` builds the extension, runs the
+# adapter suite, packs the store ZIP, and attaches both the ZIP and the unpacked
+# build to a GitHub Release. Nothing here talks to the Chrome Web Store — the
+# store accepts uploads through its own dashboard or API and is a separate,
+# manual step (see docs/RELEASING.md).
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ext
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ext/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Adapter tests
+        run: npm test
+
+      # `npm run package` re-runs the build itself, so this is the single place
+      # the shipped artifact is produced.
+      - name: Build and pack store ZIP
+        run: npm run package
+
+      - name: Verify the tag matches the manifest version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(node -p "require('./manifest.json').version")
+          if [ "$tag" != "$manifest" ]; then
+            echo "Tag v$tag does not match manifest version $manifest" >&2
+            exit 1
+          fi
+          echo "Tag and manifest both at $manifest"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p ../release-artifacts
+          cp ../kinopoisk-sync-*.zip ../release-artifacts/
+          # The unpacked build is attached too, so a tester can load it directly
+          # without rebuilding from source.
+          (cd dist && zip -qr ../../release-artifacts/kinopoisk-sync-unpacked.zip .)
+          ls -la ../release-artifacts
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          generate_release_notes: false
+          body_path: CHANGELOG.md
+          fail_on_unmatched_files: true
