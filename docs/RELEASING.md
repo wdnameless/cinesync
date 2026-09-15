@@ -1,11 +1,11 @@
-# Releasing
+# Releasing CineSync
 
-Two independent channels ship this extension, and they use different mechanics.
+Two independent channels ship CineSync, and they use different mechanics.
 Neither one reads the other.
 
 | Channel | What users get | How it updates |
 |---|---|---|
-| **GitHub Releases** | `kinopoisk-sync-<version>.zip` + unpacked build | Users re-download manually |
+| **GitHub Releases** | `cinesync-<version>.zip` + unpacked build | Users re-download manually |
 | **Chrome Web Store** (`webstore`) | Same ZIP, uploaded to the store | Chrome auto-updates installed copies |
 
 GitHub is the source of truth for code and history. The Web Store is the
@@ -30,7 +30,7 @@ upload does not create a GitHub release.
    npm ci
    npm run typecheck
    npm test
-   npm run package     # writes ../kinopoisk-sync-<version>.zip
+   npm run package     # writes ../cinesync-<version>.zip
    ```
 
 4. **Commit and tag.**
@@ -42,7 +42,7 @@ upload does not create a GitHub release.
    ```
 
 5. The `Release` workflow builds, tests, packs, checks the tag against the
-   manifest, and attaches `kinopoisk-sync-<version>.zip` plus an unpacked build
+   manifest, and attaches `cinesync-<version>.zip` plus an unpacked build
    to the GitHub Release.
 
 6. **Upload to the Chrome Web Store** (manual — see below).
@@ -69,7 +69,7 @@ Dashboard, which is the simplest path:
 
 1. Open the item in the developer dashboard → **Package** → **Upload new
    package**.
-2. Select `kinopoisk-sync-<version>.zip` produced by `npm run package`.
+2. Select `cinesync-<version>.zip` produced by `npm run package`.
 3. Fill in the **What's new** field, click **Submit for review**.
 
 Store review typically takes hours to a few days. Until it passes, the previous
@@ -79,7 +79,7 @@ For scripted uploads, `chrome-webstore-upload-cli` wraps the API:
 
 ```bash
 npx chrome-webstore-upload-cli upload \
-  --source kinopoisk-sync-3.1.0.zip \
+  --source cinesync-3.1.0.zip \
   --extension-id <item-id> \
   --client-id <oauth-client-id> \
   --client-secret <oauth-client-secret> \
@@ -101,7 +101,7 @@ Beyond the ZIP, the dashboard needs these once:
 - **Category** and **language**.
 - **Privacy practices** — the *Single purpose*, *Justification for each
   permission*, and *Data usage* forms. See `docs/PRIVACY.md` for text that
-  matches what this extension actually does; the permission justifications in
+  matches what CineSync actually does; the permission justifications in
   particular are checked against the manifest, and a mismatch is a common
   rejection reason.
 
@@ -151,7 +151,7 @@ empty storage and orphan the user's existing data).
 
 ## Status of this project as of v3.1.0
 
-- **GitHub Release: published.** `v3.1.0` carries `kinopoisk-sync-3.1.0.zip`
+- **GitHub Release: published.** `v3.1.0` carries `cinesync-3.1.0.zip`
   plus an unpacked build. The `Release` workflow is tag-triggered and green.
 - **Chrome Web Store: not published.** No developer account or API credentials
   are configured for this repository, which is a prerequisite rather than an

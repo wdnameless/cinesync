@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] — 2026-09-16
+
+### Changed
+
+- **Renamed to CineSync.** The product, manifest name, package name, popup
+  title, store artifacts and repository all move from the Kinopoisk-anchored
+  names to one that describes the actual capability: synchronising ratings and
+  watchlists across services. The former name also implied a TMDB-only, 
+  Kinopoisk-only tool and carried a third-party brand in the product title,
+  which the store's impersonation policy discourages.
+- Store artifacts are now `cinesync-<version>.zip` and
+  `cinesync-unpacked.zip`.
+- Extension ID is unchanged, so existing installs keep their credentials and
+  saved scans when they update.
+
 ## [3.1.0] — 2026-09-15
 
 ### Removed

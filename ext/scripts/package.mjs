@@ -58,7 +58,7 @@ const files = (await collect(join(ROOT, 'dist')))
   .concat(['manifest.json'])
   .sort();
 
-const name = `kinopoisk-sync-${version}.zip`;
+const name = `cinesync-${version}.zip`;
 const out = createWriteStream(join(ROOT, '..', name));
 
 // Minimal store-method ZIP writer: one entry per file, deflated.

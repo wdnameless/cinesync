@@ -1,6 +1,6 @@
 {
-  "name": "kinopoisk-tmdb-extension",
-  "version": "3.1.0",
+  "name": "cinesync",
+  "version": "3.2.0",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",

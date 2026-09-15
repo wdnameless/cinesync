@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Kinopoisk Sync — TMDB, Simkl & CSV",
-  "version": "3.1.0",
-  "description": "Перенос оценок и списка «Буду смотреть» с Кинопоиска в TMDB, Simkl и выгрузка в CSV для Letterboxd, IMDb и MovieLens.",
+  "name": "CineSync — Movie Ratings & Watchlist Sync",
+  "version": "3.2.0",
+  "description": "Перенос оценок и списка «Буду смотреть» между Кинопоиском, TMDB, Simkl, Letterboxd, IMDb и MovieLens.",
   "permissions": [
     "storage",
     "scripting",

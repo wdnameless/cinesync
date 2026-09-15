@@ -59,10 +59,10 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p ../release-artifacts
-          cp ../kinopoisk-sync-*.zip ../release-artifacts/
+          cp ../cinesync-*.zip ../release-artifacts/
           # The unpacked build is attached too, so a tester can load it directly
           # without rebuilding from source.
-          (cd dist && zip -qr ../../release-artifacts/kinopoisk-sync-unpacked.zip .)
+          (cd dist && zip -qr ../../release-artifacts/cinesync-unpacked.zip .)
           ls -la ../release-artifacts
 
       - name: Publish GitHub Release

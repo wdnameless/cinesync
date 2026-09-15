@@ -1,6 +1,6 @@
 # Privacy practices
 
-Text written to match what the extension actually does, for the Chrome Web
+Privacy answers for CineSync, written to match what the extension actually does, for the Chrome Web
 Store's *Privacy practices* tab. The permission justifications are checked
 against the manifest, so keep them in sync when permissions change.
 
