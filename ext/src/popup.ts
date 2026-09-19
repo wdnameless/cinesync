@@ -125,7 +125,7 @@ const translations: Record<Lang, Record<string, string>> = {
     step3Title: 'Сканируйте свой Кинопоиск',
     step3Desc: 'Откройте вкладку со своим профилем на kinopoisk.ru и нажмите «1. Сканировать КП». Можно переключаться на другие аккаунты параллельно.',
     step4Title: 'Переносите в TMDB без дублей',
-    step4Desc: 'Нажмите «2. В TMDB». Расширение автоматически проверит ваш аккаунт и пропустит фильмы, где уже стоят оценки!',
+    step4Desc: 'Нажмите «2. Синхронизировать». Расширение сверит получателей с вашим профилем и пропустит то, что там уже есть.',
     step5Title: 'Экспорт таблиц CSV',
     step5Desc: 'Во вкладке «Экспорт CSV» скачивайте готовые таблицы с ID, названиями, годами, оценками и прямыми ссылками на КП.',
     pingValid: 'АКТИВЕН',
@@ -139,7 +139,6 @@ const translations: Record<Lang, Record<string, string>> = {
     exportFullTitle: 'Полный архив базы',
     exportFullDesc: 'Все фильмы, оценки, списки, категории и ссылки',
     btnDownloadFull: 'Скачать всё',
-    titleKp: 'Кинопоиск',
     authTitle: 'Авторизация и ключи API',
     btnHowToConnect: 'Как подключить?',
     getKeyLink: 'Получить ↗',
@@ -157,10 +156,10 @@ const translations: Record<Lang, Record<string, string>> = {
     optRatings: 'Только оценки пользователя',
     optWatchlist: 'Только список «Буду смотреть»',
     lblScraped: 'Собрано',
-    lblSynced: 'В TMDB',
+    lblSynced: 'Перенесено',
     lblFailed: 'Ошибки',
     btnScan: '1. Сканировать КП',
-    btnStart: '2. В TMDB',
+    btnStart: '2. Синхронизировать',
     btnStop: 'Стоп',
     btnResume: 'Продолжить',
     btnReset: 'Сброс',
@@ -169,6 +168,12 @@ const translations: Record<Lang, Record<string, string>> = {
     btnExportFull: '💾 Полный архив базы (Кинопоиск CSV)',
     logsTitle: 'Логи событий',
     readyTitle: 'Готов к запуску',
+    targetStatusPending: 'в очереди',
+    targetStatusRunning: 'выполняется',
+    targetStatusCompleted: 'готово',
+    targetStatusFailed: 'ошибка',
+    targetStatusSkipped: 'пропущено',
+    svcKinopoisk: 'Кинопоиск',
     inProgress: 'В процессе...',
     syncingPrefix: 'Синхронизация:',
     captchaDetected: '⚠️ Обнаружена капча! Пройдите её во вкладке Кинопоиска',
@@ -203,7 +208,6 @@ const translations: Record<Lang, Record<string, string>> = {
     svcLetterboxd: 'Letterboxd',
     svcImdb: 'IMDb',
     svcMovielens: 'MovieLens',
-    svcKinopoisk: 'Кинопоиск',
     kinopoiskTitle: 'Кинопоиск',
     kinopoiskDesc: 'Запись оценок и списка «Буду смотреть» напрямую в ваш профиль Кинопоиска.',
     kinopoiskAutomationNotice: 'У Кинопоиска нет публичного API на запись. Расширение работает через вашу открытую вкладку браузера: держите вкладку Кинопоиска открытой и не закрывайте её во время переноса.',
@@ -275,7 +279,6 @@ const translations: Record<Lang, Record<string, string>> = {
     exportFullTitle: 'Full Database Backup',
     exportFullDesc: 'All films, ratings, lists, categories, and URLs',
     btnDownloadFull: 'Download All',
-    titleKp: 'Kinopoisk',
     authTitle: 'Authorization & API Keys',
     btnHowToConnect: 'How to Connect?',
     getKeyLink: 'Get Key ↗',
@@ -293,10 +296,10 @@ const translations: Record<Lang, Record<string, string>> = {
     optRatings: 'User Ratings Only',
     optWatchlist: 'Watchlist Only',
     lblScraped: 'Scraped',
-    lblSynced: 'In TMDB',
+    lblSynced: 'Synced',
     lblFailed: 'Failed',
     btnScan: '1. Scan Kinopoisk',
-    btnStart: '2. Transfer to TMDB',
+    btnStart: '2. Sync now',
     btnStop: 'Stop',
     btnResume: 'Resume',
     btnReset: 'Reset',
@@ -305,6 +308,12 @@ const translations: Record<Lang, Record<string, string>> = {
     btnExportFull: '💾 Full Backup Archive (CSV)',
     logsTitle: 'Event Logs',
     readyTitle: 'Ready to start',
+    targetStatusPending: 'queued',
+    targetStatusRunning: 'running',
+    targetStatusCompleted: 'done',
+    targetStatusFailed: 'failed',
+    targetStatusSkipped: 'skipped',
+    svcKinopoisk: 'Kinopoisk',
     inProgress: 'Working...',
     syncingPrefix: 'Syncing:',
     captchaDetected: '⚠️ Captcha detected! Solve it in the Kinopoisk tab',
@@ -339,7 +348,6 @@ const translations: Record<Lang, Record<string, string>> = {
     svcLetterboxd: 'Letterboxd',
     svcImdb: 'IMDb',
     svcMovielens: 'MovieLens',
-    svcKinopoisk: 'Kinopoisk',
     kinopoiskTitle: 'Kinopoisk',
     kinopoiskDesc: 'Write ratings and the watchlist directly into your Kinopoisk profile.',
     kinopoiskAutomationNotice: 'Kinopoisk has no public write API. The extension works through your open browser tab: keep a Kinopoisk tab open and do not close it during the transfer.',
@@ -747,9 +755,13 @@ function applyStateToUi(state: MigrationState) {
     if (failedVal) failedVal.textContent = state.failedCount.toString();
 
     // Progress Bar & Percentage
+    // Progress is work completed over work found. Reporting 0% next to a
+    // finished run (partial/error with counters already at 289) read as if
+    // nothing had happened, so any state that has counters uses them.
+    const processed = state.syncedCount + (state.skippedCount ?? 0) + state.failedCount;
     let pct = 0;
-    if (state.status === 'migrating' && state.totalFound > 0) {
-      pct = Math.min(100, Math.round(((state.syncedCount + state.failedCount) / state.totalFound) * 100));
+    if (state.totalFound > 0) {
+      pct = Math.min(100, Math.round((processed / state.totalFound) * 100));
     } else if (state.status === 'completed') {
       pct = 100;
     }
@@ -1104,9 +1116,13 @@ function renderTargetProgress(targets: TargetProgress[] | undefined) {
               translations[currentLang].reauthBtn
             )}</button>`
           : '';
+      // Show a product name and a readable status, not the raw service id and
+      // the wire value ('tmdb completed') the orchestrator happens to use.
+      const serviceName = translations[currentLang][`svc${t.service[0].toUpperCase()}${t.service.slice(1)}`] ?? t.service;
+      const statusText = translations[currentLang][`targetStatus${t.status[0].toUpperCase()}${t.status.slice(1)}`] ?? t.status;
       return `<div class="target-progress-row">
-        <span class="target-name">${escapeHtml(t.service)}</span>
-        <span class="target-status">${escapeHtml(t.status)}${errText}</span>
+        <span class="target-name">${escapeHtml(serviceName)}</span>
+        <span class="target-status">${escapeHtml(statusText)}${errText}</span>
         <span class="target-counters">${t.synced} / ${t.skipped} / ${t.failed}</span>
         ${reauth}
       </div>`;

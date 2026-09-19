@@ -91,12 +91,34 @@ means storing those four secrets in the repository's Actions secrets — do that
 only if the token is scoped narrowly, since it can publish to your store
 listing.
 
+## Verifying a package before uploading it
+
+The ZIP must be checked by **behaviour**, not by inspection. A previous release
+shipped a popup whose script never loaded while every static check passed.
+
+```bash
+cd ext && npm run package
+```
+
+Then load the extracted ZIP as an unpacked extension and assert that the popup
+**runs**, not merely that it renders:
+
+1. Open `chrome-extension://<id>/dist/popup.html`.
+2. Click a service tab.
+3. The active tab and the visible pane must change.
+
+If the script tag in `dist/popup.html` is absolute (`/popup.js`) rather than
+relative (`./popup.js`), the package is broken — that is the failure this check
+catches.
+
 ## Listing assets the store requires
 
 Beyond the ZIP, the dashboard needs these once:
 
 - **Icons** — already in `ext/icons/` (16/32/48/128).
-- **Screenshots** — at least one at 1280×800 or 640×400.
+- **Screenshots** — at least one at 1280×800 or 640×400. Six are committed
+  under `store/screenshots/`, with the promo tiles at `store/promo-440x280.png`
+  and `store/promo-1400x560.png`.
 - **Description** — short and detailed.
 - **Category** and **language**.
 - **Privacy practices** — the *Single purpose*, *Justification for each

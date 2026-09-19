@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CineSync — Movie Ratings & Watchlist Sync",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Перенос оценок и списка «Буду смотреть» между Кинопоиском, TMDB, Simkl, Letterboxd, IMDb и MovieLens.",
   "permissions": [
     "storage",

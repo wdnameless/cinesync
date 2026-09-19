@@ -4,6 +4,45 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] — 2026-09-19
+
+### Fixed
+
+- **The packaged extension shipped with a dead popup.** `vite` emitted
+  `<script src="/popup.js">`, which a Chrome extension resolves against the
+  extension **root**, while the file lands in `dist/`. The packaged build
+  therefore loaded *no* popup JavaScript: no tabs, no sync, no credentials —
+  the store ZIP would have shipped non-functional. Builds now use a relative
+  asset base (`./popup.js`).
+
+  Note for reviewers: the markup still rendered and `getManifest()` still
+  answered, which is why a smoke test that only checked the DOM passed. The
+  regression is caught by clicking a tab and asserting the pane changed.
+
+### Changed
+
+- **No more third-party font requests.** The popup fetched Plus Jakarta Sans
+  and JetBrains Mono from `fonts.googleapis.com`, which contradicted the
+  privacy statement (an undeclared fifth contacted host) and delayed first
+  paint. It now uses a system font stack.
+- **Header brand corrected.** The in-app header still read
+  "Кинопоиск ➔ TMDB" after the rename; the manifest and `<title>` had changed
+  but the visible brand had not.
+- **Service tabs wrap instead of hiding.** Six services did not fit one 440px
+  row, and the last one sat behind an invisible scroll edge.
+- **Target rows are readable.** They showed raw wire values ("tmdb completed")
+  instead of the product name and a localised status.
+- **Metric and action labels are target-agnostic.** "Собрано / В TMDB / Ошибки"
+  and "2. В TMDB" predated multi-target sync and now read
+  "Собрано / Перенесено / Ошибки" and "2. Синхронизировать".
+- **Progress reflects finished runs.** A completed run showed 0% next to its
+  own counters.
+
+### Added
+
+- `store/` with the listing assets: six 1280×800 screenshots and the 440×280
+  and 1400×560 promo tiles.
+
 ## [3.2.0] — 2026-09-16
 
 ### Changed

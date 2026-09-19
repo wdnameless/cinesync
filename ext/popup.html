@@ -4,9 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CineSync — Movie Ratings &amp; Watchlist Sync</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-base: #0c0e14;
@@ -40,8 +37,12 @@
       --radius-lg: 16px;
       --radius-full: 9999px;
 
-      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
+      /* System stack only. The previous build pulled Plus Jakarta Sans and
+         JetBrains Mono from fonts.googleapis.com, which contradicted the
+         privacy statement (a fifth contacted host, undeclared) and made the
+         popup wait on a network round-trip before it could paint. */
+      --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
     }
 
     * {
@@ -138,6 +139,14 @@
       display: flex;
       align-items: center;
       gap: 6px;
+    }
+
+    .brand-name {
+      background: linear-gradient(90deg, #ff6600 0%, #ffb066 45%, #01b4e4 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: #ff8a3d;
     }
 
     .brand-title .arrow {
@@ -244,26 +253,21 @@
     /* Second-level Service Tabs */
     .service-nav-wrapper {
       width: 100%;
-      overflow-x: auto;
-      scrollbar-width: none;
-      -ms-overflow-style: none;
       padding-bottom: 2px;
       box-sizing: border-box;
-    }
-    .service-nav-wrapper::-webkit-scrollbar {
-      display: none;
     }
 
     .service-nav-tabs {
       display: flex;
-      flex-wrap: nowrap;
+      /* Six services do not fit on one 440px row. Scrolling hid the last tab
+         behind an edge with no scrollbar and no cue, so they wrap instead. */
+      flex-wrap: wrap;
       gap: 4px;
       background: rgba(255, 255, 255, 0.02);
       border: 1px solid var(--border-base);
       border-radius: var(--radius-md);
       padding: 3px;
-      width: max-content;
-      min-width: 100%;
+      width: 100%;
       box-sizing: border-box;
     }
 
@@ -1033,9 +1037,7 @@
           </svg>
         </div>
         <div class="brand-title">
-          <span data-i18n="titleKp">Kinopoisk</span>
-          <span class="arrow">➔</span>
-          <span style="color: var(--brand-tmdb);">TMDB</span>
+          <span class="brand-name">CineSync</span>
         </div>
       </div>
       <div class="lang-switcher">
@@ -1122,7 +1124,7 @@
           </div>
           <div class="metric-card">
             <div class="metric-val success" id="syncedVal">0</div>
-            <div class="metric-lbl" data-i18n="lblSynced">В TMDB</div>
+            <div class="metric-lbl" data-i18n="lblSynced">Перенесено</div>
           </div>
           <div class="metric-card">
             <div class="metric-val danger" id="failedVal">0</div>
@@ -1147,7 +1149,7 @@
           </button>
           <button class="btn btn-primary btn-tmdb-action" id="startBtn" title="Синхронизировать собранные фильмы с аккаунтом TMDB">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            <span data-i18n="btnTransfer">2. В TMDB</span>
+            <span data-i18n="btnTransfer">2. Синхронизировать</span>
           </button>
           <button class="btn btn-stop" id="stopBtn" style="display: none;" title="Остановить процесс">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
@@ -1612,7 +1614,7 @@
               <span data-i18n="step4Title">Переносите в TMDB без дублей</span>
             </div>
             <div class="guide-step-desc" data-i18n="step4Desc">
-              Нажмите «2. В TMDB». Расширение автоматически проверит ваш аккаунт и пропустит фильмы, где уже стоят оценки!
+              Нажмите «2. Синхронизировать». Расширение сверит получателей с вашим профилем и пропустит то, что там уже есть.
             </div>
           </div>
         </div>

@@ -44,3 +44,6 @@ Thumbs.db
 # store packages
 *.zip
 !ext/package-lock.json
+
+# transient capture workspace for store assets
+store-assets/
